@@ -1,17 +1,27 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase, Order, OrderLine } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth";
 import { StatusBadge } from "@/components/status-badge";
 import { SourceBadge } from "@/components/source-badge";
 
 export default function OrderDetailPage() {
+  const { user, loading: authLoading } = useAuth();
+  const router = useRouter();
   const { id } = useParams<{ id: string }>();
   const [order, setOrder] = useState<Order | null>(null);
   const [lines, setLines] = useState<OrderLine[]>([]);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push("/");
+      return;
+    }
+  }, [user, authLoading, router]);
 
   useEffect(() => {
     async function fetch() {

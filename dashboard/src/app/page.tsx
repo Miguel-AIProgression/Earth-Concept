@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { supabase, Order } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth";
+import { LoginForm } from "@/components/login-form";
 import { OrderFunnel } from "@/components/order-funnel";
 import { OrderTable } from "@/components/order-table";
 import { OrderFilters } from "@/components/order-filters";
@@ -9,6 +11,7 @@ import { OrderFilters } from "@/components/order-filters";
 type View = "funnel" | "list";
 
 export default function OrdersPage() {
+  const { user, loading: authLoading } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<View>("funnel");
@@ -38,6 +41,14 @@ export default function OrdersPage() {
     (sum, o) => sum + (Number(o.amount) || 0),
     0
   );
+
+  if (authLoading) {
+    return <p className="text-gray-500 py-8 text-center">Laden...</p>;
+  }
+
+  if (!user) {
+    return <LoginForm />;
+  }
 
   return (
     <div>

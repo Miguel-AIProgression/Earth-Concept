@@ -37,6 +37,13 @@ def parse_odata_date(date_str):
         return None
 
 
+def classify_source(creator):
+    """Bepaal of een order via Semso/EDI of handmatig is aangemaakt."""
+    if creator == "Kantoor EARTH":
+        return "semso_edi"
+    return "manual"
+
+
 def transform_order(raw):
     return {
         "exact_order_id": raw["OrderID"],
@@ -47,6 +54,7 @@ def transform_order(raw):
         "invoice_status": raw.get("InvoiceStatus"),
         "invoice_status_description": raw.get("InvoiceStatusDescription"),
         "creator": raw.get("CreatorFullName"),
+        "source": classify_source(raw.get("CreatorFullName")),
         "customer_name": raw.get("OrderedByName"),
         "description": raw.get("Description"),
         "your_ref": raw.get("YourRef"),

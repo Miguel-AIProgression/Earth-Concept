@@ -1,4 +1,4 @@
-from sync_orders import transform_order, transform_order_line, parse_odata_date
+from sync_orders import transform_order, transform_order_line, parse_odata_date, classify_source
 
 
 def test_parse_odata_date():
@@ -28,8 +28,15 @@ def test_transform_order():
     assert result["exact_order_id"] == "abc-123"
     assert result["order_number"] == 9527
     assert result["creator"] == "Kantoor EARTH"
+    assert result["source"] == "semso_edi"
     assert result["amount"] == 1234.56
     assert result["order_date"] is not None
+
+
+def test_classify_source():
+    assert classify_source("Kantoor EARTH") == "semso_edi"
+    assert classify_source("Patrick de Nekker") == "manual"
+    assert classify_source(None) == "manual"
 
 
 def test_transform_order_line():

@@ -1,4 +1,9 @@
-"""Herbruikbare Exact Online API client met token refresh en paginatie."""
+"""Herbruikbare Exact Online API client met token refresh en paginatie.
+
+Tokens worden opgeslagen in Supabase (config tabel) zodat het script
+stateloos kan draaien op GitHub Actions. Fallback naar lokaal bestand
+voor lokale ontwikkeling.
+"""
 
 import json
 import os
@@ -9,26 +14,57 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _supabase_client():
+    """Maak een Supabase client als de env vars beschikbaar zijn."""
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_SERVICE_KEY")
+    if url and key:
+        from supabase import create_client
+        return create_client(url, key)
+    return None
+
+
 class ExactClient:
     TOKEN_URL = "https://start.exactonline.nl/api/oauth2/token"
+    TOKEN_CONFIG_KEY = "exact_tokens"
 
     def __init__(self, token_file="exact_tokens.json"):
         self.client_id = os.getenv("EXACT_CLIENT_ID")
         self.client_secret = os.getenv("EXACT_CLIENT_SECRET")
         self.division = os.getenv("EXACT_DIVISION")
         self.token_file = token_file
+        self._sb = _supabase_client()
         self.tokens = self._load_tokens()
         self.base_url = f"https://start.exactonline.nl/api/v1/{self.division}"
-        # Start met het access token uit het bestand
         self._access_token = self.tokens.get("access_token")
 
     def _load_tokens(self):
+        """Laad tokens: eerst Supabase, dan lokaal bestand."""
+        if self._sb:
+            try:
+                result = self._sb.table("config").select("value").eq(
+                    "key", self.TOKEN_CONFIG_KEY
+                ).execute()
+                if result.data:
+                    return result.data[0]["value"]
+            except Exception:
+                pass
         if os.path.exists(self.token_file):
             with open(self.token_file) as f:
                 return json.load(f)
         return {}
 
     def _save_tokens(self, tokens):
+        """Sla tokens op in Supabase + lokaal bestand als fallback."""
+        if self._sb:
+            try:
+                self._sb.table("config").upsert({
+                    "key": self.TOKEN_CONFIG_KEY,
+                    "value": tokens,
+                    "updated_at": "now()",
+                }, on_conflict="key").execute()
+            except Exception:
+                pass
         with open(self.token_file, "w") as f:
             json.dump(tokens, f, indent=2)
         self.tokens = tokens

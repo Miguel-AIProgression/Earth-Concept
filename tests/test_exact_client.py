@@ -7,6 +7,7 @@ def test_refresh_token():
     client.client_id = "test_id"
     client.client_secret = "test_secret"
     client.token_file = "test_tokens.json"
+    client._sb = None
     client.tokens = {"refresh_token": "old_refresh"}
 
     mock_resp = MagicMock()
@@ -63,6 +64,7 @@ def test_retry_on_401():
     client.client_id = "id"
     client.client_secret = "secret"
     client.token_file = "test_tokens.json"
+    client._sb = None
     client.tokens = {"refresh_token": "refresh"}
 
     resp_401 = MagicMock()

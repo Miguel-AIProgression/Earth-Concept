@@ -1,2 +1,7 @@
 .env
 exact_tokens.json
+sync_state.json
+auto_delivery.log
+sync_incremental.log
+__pycache__/
+*.pyc

@@ -1,0 +1,33 @@
+name: Sync Orders
+
+on:
+  schedule:
+    # Elke 15 minuten
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    # Handmatig triggeren vanuit GitHub UI
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run incremental sync
+        env:
+          EXACT_CLIENT_ID: ${{ secrets.EXACT_CLIENT_ID }}
+          EXACT_CLIENT_SECRET: ${{ secrets.EXACT_CLIENT_SECRET }}
+          EXACT_DIVISION: ${{ secrets.EXACT_DIVISION }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python sync_incremental.py

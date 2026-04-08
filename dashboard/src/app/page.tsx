@@ -7,35 +7,47 @@ import { LoginForm } from "@/components/login-form";
 import { OrderFunnel } from "@/components/order-funnel";
 import { OrderTable } from "@/components/order-table";
 import { OrderFilters } from "@/components/order-filters";
+import { ShippingQueue } from "@/components/shipping-queue";
 
-type View = "funnel" | "list";
+type View = "shipping" | "funnel" | "list";
 
 export default function OrdersPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, session, loading: authLoading } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<View>("funnel");
+  const [view, setView] = useState<View>("shipping");
   const [source, setSource] = useState("");
   const [status, setStatus] = useState("");
 
+  async function fetchOrders() {
+    setLoading(true);
+    let query = supabase
+      .from("orders")
+      .select("*")
+      .order("order_date", { ascending: false });
+
+    if (source) query = query.eq("source", source);
+    if (status) query = query.eq("delivery_status", parseInt(status));
+
+    const { data, error } = await query;
+    if (error) console.error("Fout bij ophalen orders:", error);
+    setOrders(data || []);
+    setLoading(false);
+  }
+
   useEffect(() => {
-    async function fetchOrders() {
-      setLoading(true);
-      let query = supabase
-        .from("orders")
-        .select("*")
-        .order("order_date", { ascending: false });
-
-      if (source) query = query.eq("source", source);
-      if (status) query = query.eq("delivery_status", parseInt(status));
-
-      const { data, error } = await query;
-      if (error) console.error("Fout bij ophalen orders:", error);
-      setOrders(data || []);
-      setLoading(false);
-    }
     fetchOrders();
   }, [source, status]);
+
+  function handleOrderShipped(orderId: string) {
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === orderId
+          ? { ...o, delivery_status: 21, delivery_status_description: "Volledig geleverd" }
+          : o
+      )
+    );
+  }
 
   const totalAmount = orders.reduce(
     (sum, o) => sum + (Number(o.amount) || 0),
@@ -63,26 +75,19 @@ export default function OrdersPage() {
           </p>
         </div>
         <div className="flex bg-gray-100 rounded-lg p-0.5">
-          <button
-            onClick={() => setView("funnel")}
-            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-              view === "funnel"
-                ? "bg-white text-gray-900 shadow-sm"
-                : "text-gray-500 hover:text-gray-700"
-            }`}
-          >
-            Funnel
-          </button>
-          <button
-            onClick={() => setView("list")}
-            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-              view === "list"
-                ? "bg-white text-gray-900 shadow-sm"
-                : "text-gray-500 hover:text-gray-700"
-            }`}
-          >
-            Lijst
-          </button>
+          {(["shipping", "funnel", "list"] as const).map((v) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                view === v
+                  ? "bg-white text-gray-900 shadow-sm"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {v === "shipping" ? "Verzenden" : v === "funnel" ? "Funnel" : "Lijst"}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -97,6 +102,12 @@ export default function OrdersPage() {
 
       {loading ? (
         <p className="text-gray-500 py-8 text-center">Laden...</p>
+      ) : view === "shipping" ? (
+        <ShippingQueue
+          orders={orders}
+          accessToken={session?.access_token || ""}
+          onOrderShipped={handleOrderShipped}
+        />
       ) : view === "funnel" ? (
         <OrderFunnel orders={orders} />
       ) : (

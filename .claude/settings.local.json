@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__claude_ai_Supabase__list_organizations",
+      "mcp__claude_ai_Supabase__list_projects",
+      "mcp__claude_ai_Supabase__list_tables",
+      "mcp__claude_ai_Supabase__get_project_url",
+      "mcp__claude_ai_Supabase__get_publishable_keys",
+      "Skip permissions",
+      "mcp__claude_ai_Supabase__apply_migration",
+      "Bash(python -m pytest tests/test_exact_client.py -v)",
+      "Bash(pip install:*)",
+      "Bash(python -m pytest tests/test_sync_orders.py -v)",
+      "Bash(python -m pytest tests/ -v)",
+      "Bash(python sync_orders.py --dry-run)",
+      "Bash(python -c ':*)",
+      "Bash(npx create-next-app@latest dashboard --typescript --tailwind --eslint --app --src-dir --no-import-alias --use-npm)",
+      "Bash(npm install:*)",
+      "Bash(python sync_orders.py)",
+      "Bash(npx next:*)",
+      "mcp__claude_ai_Supabase__execute_sql",
+      "Bash(npm run:*)"
+    ]
+  }
+}

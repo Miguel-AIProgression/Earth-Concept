@@ -1,0 +1,243 @@
+Delivered-To: miguel@aiprogression.nl
+Received: by 2002:a05:7010:c00d:b0:50c:d289:4a6c with SMTP id ja13csp613091mdb;
+        Thu, 2 Apr 2026 01:48:11 -0700 (PDT)
+X-Received: by 2002:a05:600c:3e0e:b0:480:2521:4d92 with SMTP id 5b1f17b1804b1-4888b79fbeamr40546345e9.24.1775119691221;
+        Thu, 02 Apr 2026 01:48:11 -0700 (PDT)
+ARC-Seal: i=1; a=rsa-sha256; t=1775119691; cv=none;
+        d=google.com; s=arc-20240605;
+        b=JbDjLU69X8RiYXUSEo1IQFNyGAPyfYWpD8loxaLT9mVCG9zvU0TelwE+j8f+yfdsSw
+         MRpeNkpEKwl7cm1rvd/QLPdm/7EI/JGpmp6A0ZSnoewy7y2nh5WZH/JXkO3UHdCyGO42
+         Vo/MF9y6EYBSqwJrXzZymg51HZYMnDyUKPQsMOkSWi++DWdvqzbOD/LDnPBA3npDMUnI
+         QePnzxvn8yJt+CNtTzzTW8dAQiOTaS2D3gbD875o0+3bkZzG18z2Bq9gBMaOnP+SUIcR
+         eoaCEJ8hddEZpyMqagTkelaTxgg82UcZlkv9tdtf7ZxWHM+HIzecKnOW8ZmYzpYFyI/9
+         OMDw==
+ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=arc-20240605;
+        h=to:references:message-id:subject:date:mime-version:from
+         :content-transfer-encoding:dkim-signature;
+        bh=J97K0C+bBUnVo/Ykk1HWZSEJqfzsBCe1ootfiSyL6I8=;
+        fh=q/HsA4cjOYQboxgIxBFSUPYyPNBdN9PTOKLHOGlONzY=;
+        b=I/CHgBX2flPRik57i4heEMq5I30IEKVFFR34M3IGvVO0Via4OTX+P2jUqiKeHoUbof
+         DtX3Aut4JEWzZerpvmHlsfkE/02bRZVMcLYNTbG1Ys7fzKpSrutCKKcv1IGPpgYIrT0q
+         H4OdfP1yfpMtubBxPB/GPeoMgQoHfXoTCYVYukx7zB910vKVNCYg/yQ7oZbb41YPPhEy
+         jielQOKCABXWYBFLZHvd/cqe59E9E1gc/8LeVtzWLWteUVeWLzm0D7Vcgge0BK0DW2IP
+         JFFCFt0Zs5O1uQYUj97GNgTDEAXXkUYFM0bwWkKPB3++sqozoHZcUUqUqsz4qC3kgZnL
+         ffEw==;
+        dara=google.com
+ARC-Authentication-Results: i=1; mx.google.com;
+       dkim=pass header.i=@earthwater-nl.20230601.gappssmtp.com header.s=20230601 header.b=Ubt+pix3;
+       spf=pass (google.com: domain of patrick@earthwater.nl designates 209.85.220.41 as permitted sender) smtp.mailfrom=patrick@earthwater.nl;
+       dara=neutral header.i=@aiprogression.nl
+Return-Path: <patrick@earthwater.nl>
+Received: from mail-sor-f41.google.com (mail-sor-f41.google.com. [209.85.220.41])
+        by mx.google.com with SMTPS id 5b1f17b1804b1-4888a6759e7sor3903525e9.3.2026.04.02.01.48.11
+        for <miguel@aiprogression.nl>
+        (Google Transport Security);
+        Thu, 02 Apr 2026 01:48:11 -0700 (PDT)
+Received-SPF: pass (google.com: domain of patrick@earthwater.nl designates 209.85.220.41 as permitted sender) client-ip=209.85.220.41;
+Authentication-Results: mx.google.com;
+       dkim=pass header.i=@earthwater-nl.20230601.gappssmtp.com header.s=20230601 header.b=Ubt+pix3;
+       spf=pass (google.com: domain of patrick@earthwater.nl designates 209.85.220.41 as permitted sender) smtp.mailfrom=patrick@earthwater.nl;
+       dara=neutral header.i=@aiprogression.nl
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=earthwater-nl.20230601.gappssmtp.com; s=20230601; t=1775119690; x=1775724490; darn=aiprogression.nl;
+        h=to:references:message-id:subject:date:mime-version:from
+         :content-transfer-encoding:from:to:cc:subject:date:message-id
+         :reply-to;
+        bh=J97K0C+bBUnVo/Ykk1HWZSEJqfzsBCe1ootfiSyL6I8=;
+        b=Ubt+pix3GGDcTahI49cAtwDrJdqhja0GqNc1rOEdvN9rJtKvp1r0c5Fsg1EB11hOL9
+         hFbuwr8aBV9yQsYaea7lGGbzIIdpI+QqLNzZHmIubS+V5zRe5/Fq1jQfn046rOCjG2RE
+         8Oxyh30miAOM7rB8jMQPgtw73V7La8Bj0tvAAy9jqbB/13KscAm1YpZTzG4RtAJy+MGN
+         c9wpDdXA/Y6SxjbETwyHVgktOj+HWcfb7cgqtnDRXWzK+FFBYlCKSe+kfW5MaSZ6X5bp
+         jHWK2joPMqg8WznVJhX9J5C2Vo6M4FUgx0QVtExAx0WpvzHOmvZ1XUKlpUjay7UOsJ9R
+         Ih2g==
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=1e100.net; s=20251104; t=1775119690; x=1775724490;
+        h=to:references:message-id:subject:date:mime-version:from
+         :content-transfer-encoding:x-gm-gg:x-gm-message-state:from:to:cc
+         :subject:date:message-id:reply-to;
+        bh=J97K0C+bBUnVo/Ykk1HWZSEJqfzsBCe1ootfiSyL6I8=;
+        b=cHhbJhFa4jLjWfOU5wMKzAds9gM2zrB6OJaoxF8/1f45knwnw/AjGx6sGbZitHCezl
+         WIEzDl4rU3l4Ov7b28OAkz4MOg6iV7ViJWPMGTbGf1EWhl66SqVeGvxu1ZC++9JNSfiX
+         Uvigj5tdMzG8tFycj+7U3YIKW3mD9sooDiSe24Ga5b5nWXLVXq+pp6+kGFWg0AyCJZon
+         ZS1Vv+Y5j4DDZUinQDGAYlo7g2HZ3KfjLRCaQ+q3MQCSbxl9UjNBa32R4306b0wTB5GE
+         1Mv+4POGF92nrjVtDEo9XdeTf1sDPlZO1XmucSatt+oecOIMyZcH9bPCMlDik2QPp0J9
+         q+/A==
+X-Gm-Message-State: AOJu0Yzfgjpv46/plb/3qPf18nWiJGh4artxemllAHk2GYOXp57GBys4
+	y5z5MqC07dM3GWScpsDlxyFQNPqPK+QT2/HSrFvQZmy3eY6mH8l8gGK3C764YMWc0rcjNXZTK3b
+	LZKdN
+X-Gm-Gg: ATEYQzzXaO0pNoBEEisg3aLZOk0PkDQS+ETCD+XSOY6CsaVjmtmU4spGr3mPwzKj9dm
+	D2rxIpmNt5yxEDf/WQCwOD/I1Q6ygJbKffI0ITog5JCx/VWJP6zm4+U58fEfIQR/uAY//YClRXb
+	NFbCQKKAXncYva78YUx3bF4AGF3birJxr05RcOdbh7aw+rdlMAnAQ9kdtFDGi9oQBAl0kEBbVm7
+	IcYo2xn0t5Y9JBaEErfj6bhfWfVfUCLZ+wEQho1Lr9RkjJYIIhroYBsyNIHAJqug/G3Lpd00Qbz
+	YgwnBCL5VKOLo5Gfl7N068nAnSSk0sLBNZtaQHasDlH4BM8hp7mnN97lR089dJLrNxJLG8rgO7C
+	1+U5/NElbqjxV1OPBvWaVEbIqoZ/dF6E1XZpVSc/EswvEInuKDEN+dd3v1zI/uuon2c+SDXP756
+	uiRnf+LP2tmuW3K/ranNjypl76aeRo5p/O/0kqguBqc0xYm3C9vF3gjIq44g==
+X-Received: by 2002:a05:600c:b99:b0:485:3fc8:de9c with SMTP id 5b1f17b1804b1-4888b70e525mr39228635e9.12.1775119690084;
+        Thu, 02 Apr 2026 01:48:10 -0700 (PDT)
+Return-Path: <patrick@earthwater.nl>
+Received: from smtpclient.apple ([109.36.128.198])
+        by smtp.gmail.com with ESMTPSA id 5b1f17b1804b1-4887c751158sm91562885e9.6.2026.04.02.01.48.09
+        for <miguel@aiprogression.nl>
+        (version=TLS1_3 cipher=TLS_AES_256_GCM_SHA384 bits=256/256);
+        Thu, 02 Apr 2026 01:48:09 -0700 (PDT)
+Content-Type: multipart/alternative; boundary=Apple-Mail-B708E766-F8C4-426E-B86A-3BA8012CDB0A
+Content-Transfer-Encoding: 7bit
+From: Patrick De Nekker <patrick@earthwater.nl>
+Mime-Version: 1.0 (1.0)
+Date: Thu, 2 Apr 2026 10:47:58 +0200
+Subject: Fwd: Order Week 15
+Message-Id: <17C865C0-5D6E-473F-8BB0-2D341CBD823B@earthwater.nl>
+References: <MRWPR06MB108698B08B24B7C9FB9E25878D251A@MRWPR06MB10869.eurprd06.prod.outlook.com>
+To: Miguel Doll <miguel@aiprogression.nl>
+X-Mailer: iPhone Mail (23C55)
+
+
+--Apple-Mail-B708E766-F8C4-426E-B86A-3BA8012CDB0A
+Content-Type: text/html;
+	charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+<html class=3D"apple-mail-supports-explicit-dark-mode"><head><meta http-equi=
+v=3D"content-type" content=3D"text/html; charset=3Dutf-8"></head><body dir=3D=
+"auto"><br id=3D"lineBreakAtBeginningOfSignature"><div dir=3D"ltr">Verstuurd=
+ vanaf mijn iPhone</div><div dir=3D"ltr"><br>Begin doorgestuurd bericht:<br>=
+<br></div><blockquote type=3D"cite"><div dir=3D"ltr"><b>Van:</b> NUNO MARTIN=
+HO ROSA &lt;n.martinhorosa@anantara-hotels.com&gt;<br><b>Datum:</b> 2 april 2=
+026 om 10:37:28 CEST<br><b>Aan:</b> vie@earthwater.nl<br><b>Kopie:</b> Patri=
+ck De Nekker &lt;patrick@earthwater.nl&gt;, DENISLAV KARABASHEV &lt;d.karaba=
+shev@anantara-hotels.com&gt;, HENK GOOIJER &lt;h.gooijer@anantara-hotels.com=
+&gt;<br><b>Onderwerp:</b> <b>Order Week 15</b><br><br></div></blockquote><bl=
+ockquote type=3D"cite"><div dir=3D"ltr">=EF=BB=BF
+
+<meta http-equiv=3D"Content-Type" content=3D"text/html; charset=3Dus-ascii">=
+
+<meta name=3D"Generator" content=3D"Microsoft Word 15 (filtered medium)">
+<style>@font-face { font-family: "Cambria Math"; }
+@font-face { font-family: Calibri; }
+@font-face { font-family: Aptos; }
+p.MsoNormal, li.MsoNormal, div.MsoNormal { margin: 0cm; font-size: 11pt; fon=
+t-family: Aptos, sans-serif; }
+a:link, span.MsoHyperlink { color: rgb(70, 120, 134); text-decoration: under=
+line; }
+span.EmailStyle17 { font-family: Aptos, sans-serif; color: windowtext; }
+span.apple-converted-space { }
+span.s1 { }
+.MsoChpDefault { font-size: 11pt; }
+@page WordSection1 { size: 612pt 792pt; margin: 70.85pt; }
+div.WordSection1 { page: WordSection1; }</style><!--[if gte mso 9]><xml>
+<o:shapedefaults v:ext=3D"edit" spidmax=3D"1026" />
+</xml><![endif]--><!--[if gte mso 9]><xml>
+<o:shapelayout v:ext=3D"edit">
+<o:idmap v:ext=3D"edit" data=3D"1" />
+</o:shapelayout></xml><![endif]-->
+
+
+<div class=3D"WordSection1">
+<p class=3D"MsoNormal">Dear Rachel<o:p></o:p></p>
+<p class=3D"MsoNormal"><o:p>&nbsp;</o:p></p>
+<p class=3D"MsoNormal"><b><span lang=3D"EN-US" style=3D"font-size:12.0pt;fon=
+t-family:&quot;Calibri&quot;,sans-serif;color:#1F4E79">Week 15 / 2026<o:p></=
+o:p></span></b></p>
+<p class=3D"MsoNormal"><span lang=3D"EN-US" style=3D"font-size:12.0pt;font-f=
+amily:&quot;Calibri&quot;,sans-serif;color:#1F4E79"><o:p>&nbsp;</o:p></span>=
+</p>
+<p class=3D"MsoNormal"><span lang=3D"EN-US" style=3D"font-size:12.0pt;font-f=
+amily:&quot;Calibri&quot;,sans-serif;color:#1F4E79">I made an order for 96 b=
+oxes / 1 pallet<span class=3D"apple-converted-space">&nbsp;</span><span clas=
+s=3D"s1">Earth Water Still Tetra 33cl and</span><span class=3D"apple-convert=
+ed-space">&nbsp;&nbsp;</span>70
+ Boxes/ 1 Pallet EARTH WATER W/ANANTARA LOGO STILL 75cl <span class=3D"s1">w=
+ith PO</span><span class=3D"apple-converted-space"><b>&nbsp;</b></span><b>46=
+00130365<o:p></o:p></b></span></p>
+<p class=3D"MsoNormal"><b><span lang=3D"EN-US" style=3D"font-size:12.0pt;fon=
+t-family:&quot;Calibri&quot;,sans-serif;color:#1F4E79"><o:p>&nbsp;</o:p></sp=
+an></b></p>
+<p class=3D"MsoNormal"><span lang=3D"EN-US" style=3D"font-size:12.0pt;font-f=
+amily:&quot;Calibri&quot;,sans-serif;color:#1F4E79">We would like to receive=
+ this material on 07 April 2026.<o:p></o:p></span></p>
+<p class=3D"MsoNormal"><span lang=3D"EN-US" style=3D"font-size:12.0pt;font-f=
+amily:&quot;Calibri&quot;,sans-serif;color:#1F4E79"><o:p>&nbsp;</o:p></span>=
+</p>
+<p class=3D"MsoNormal"><span lang=3D"EN-US" style=3D"font-size:12.0pt;font-f=
+amily:&quot;Calibri&quot;,sans-serif;color:#1F4E79">I made order with PO<spa=
+n class=3D"apple-converted-space">&nbsp;</span><b>4600130368</b> for 140 Box=
+es EARTH WATER W/ANANTARA LOGO STILL 75cl or 2 pallets
+ to be delivered on 09 April 2026<b><o:p></o:p></b></span></p>
+<p class=3D"MsoNormal"><span lang=3D"EN-US" style=3D"font-size:12.0pt;font-f=
+amily:&quot;Calibri&quot;,sans-serif;color:#1F4E79"><o:p>&nbsp;</o:p></span>=
+</p>
+<p class=3D"MsoNormal"><span lang=3D"EN-US" style=3D"color:#1F4E79"><o:p>&nb=
+sp;</o:p></span></p>
+<p class=3D"MsoNormal"><span lang=3D"EN-US" style=3D"color:#1F4E79">Best Reg=
+ards<o:p></o:p></span></p>
+<p class=3D"MsoNormal"><span lang=3D"EN-US"><o:p>&nbsp;</o:p></span></p>
+<p class=3D"MsoNormal"><span lang=3D"EN-US"><o:p>&nbsp;</o:p></span></p>
+<p class=3D"MsoNormal" style=3D"margin-bottom:12.0pt"><b><span lang=3D"EN-US=
+" style=3D"color:black;mso-ligatures:none;mso-fareast-language:NL">Nuno Rosa=
+<br>
+</span></b><span lang=3D"EN-US" style=3D"color:black;mso-ligatures:none;mso-=
+fareast-language:NL">Purchasing Manager</span><span lang=3D"EN-US" style=3D"=
+font-size:11.5pt;color:black;mso-ligatures:none;mso-fareast-language:NL"><br=
+>
+<br>
+</span><span lang=3D"EN-US" style=3D"color:#181717;mso-ligatures:none;mso-fa=
+reast-language:NL">T: &nbsp;+31 (0)20 554 6079</span><span lang=3D"EN-US" st=
+yle=3D"font-family:&quot;Arial&quot;,sans-serif;color:#181717;mso-ligatures:=
+none;mso-fareast-language:NL">
+</span><span lang=3D"EN-US" style=3D"color:#181717;mso-ligatures:none;mso-fa=
+reast-language:NL">| E:
+<a href=3D"mailto:n.martinhorosa@anantara-hotels.com"><span style=3D"color:#=
+181717">n.martinhorosa@anantara-hotels.com</span></a></span><b><span lang=3D=
+"EN-US" style=3D"font-size:11.5pt;color:black;mso-ligatures:none;mso-fareast=
+-language:NL"><o:p></o:p></span></b></p>
+<p class=3D"MsoNormal"><span lang=3D"EN-US" style=3D"font-size:10.0pt;color:=
+#A48E82;mso-ligatures:none;mso-fareast-language:NL">ANANTARA GRAND HOTEL KRA=
+SNAPOLSKY AMSTERDAM</span><span lang=3D"EN-US" style=3D"font-size:10.0pt;fon=
+t-family:&quot;Calibri&quot;,sans-serif;color:#A48E82;mso-ligatures:none"><o=
+:p></o:p></span></p>
+<p class=3D"MsoNormal"><span lang=3D"EN-US" style=3D"font-size:10.0pt;color:=
+#A48E82;mso-ligatures:none;mso-fareast-language:NL">Dam 9, Amsterdam 1012 JS=
+, The Netherlands</span><span lang=3D"EN-US" style=3D"font-size:10.0pt;font-=
+family:&quot;Times New Roman&quot;,serif;color:#A48E82;mso-ligatures:none;ms=
+o-fareast-language:NL"><o:p></o:p></span></p>
+<p class=3D"MsoNormal"><span style=3D"font-size:10.0pt;mso-ligatures:none;ms=
+o-fareast-language:NL"><a href=3D"https://www.anantara.com/en"><span lang=3D=
+"EN-GB" style=3D"color:#A48E82">ANANTARA.COM</span></a></span><span lang=3D"=
+EN-US" style=3D"font-family:&quot;Calibri&quot;,sans-serif;color:#1F497D;mso=
+-ligatures:none"><o:p></o:p></span></p>
+<p class=3D"MsoNormal"><span lang=3D"EN-US" style=3D"font-family:&quot;Calib=
+ri&quot;,sans-serif;color:#1F497D;mso-ligatures:none;mso-fareast-language:NL=
+"><o:p>&nbsp;</o:p></span></p>
+<p class=3D"MsoNormal"><o:p>&nbsp;</o:p></p>
+</div>
+<br>
+<font face=3D"Arial" color=3D"Gray" size=3D"1"><br>
+MINOR HOTELS EUROPE &amp; AMERICAS will process the personal data collected f=
+or the purpose of managing the relationship and contact and, where appropria=
+te, responding to your requests. You can contact us at the address calle San=
+ta Engracia 120, 7, 28003, Madrid.
+ The legal basis for processing is the legitimate interest. You can access, r=
+ectify, delete, oppose, limit the processing or request the portability of y=
+our data by contacting dataprotection@minor-hotels.com contacting our Data P=
+rotection Officer via the following
+ email address dpo@minor-hotels.com or contacting the Spanish Data Protectio=
+n Agency. Your data will be stored during the relationship and after termina=
+tion of the same, for the limitation period for legal actions that could res=
+ult from it. For further details
+ you can visit our website: https://www.nh-hotels.com/en/privacy-policy-NH .=
+ This e-mail, including any attachments and the information contained therei=
+n, is confidential. If you are not the intended recipient of this message, y=
+ou are not allowed to use it,
+ copy it or disclose it, totally or partially, by any means. In such event, p=
+lease send the message back to the sender and delete it. Any unauthorized pu=
+blication, use, copy, dissemination or disclosure of this message or any of i=
+ts attachments, either in whole
+ or in part, whichever the purpose might be, is strictly prohibited. For mor=
+e information in your language visit our website: https://corporate.minor-ho=
+tels.com/en/gdpr<br>
+</font>
+
+
+</div></blockquote></body></html>=
+
+--Apple-Mail-B708E766-F8C4-426E-B86A-3BA8012CDB0A--

@@ -53,3 +53,81 @@ def create_goods_delivery(client, order, lines):
     }
 
     return client.post("/salesorder/GoodsDeliveries", payload)
+
+
+def process_open_orders(client, dry_run=False):
+    """Verwerk alle open Kantoor EARTH orders: maak GoodsDeliveries aan."""
+    orders = get_open_kantoor_orders(client)
+    log.info(f"{len(orders)} open Kantoor EARTH orders gevonden")
+
+    if dry_run:
+        log.info("DRY RUN — er worden geen deliveries aangemaakt")
+
+    results = []
+
+    for order in orders:
+        order_number = order.get("OrderNumber")
+        customer = order.get("OrderedByName", "Onbekend")
+
+        try:
+            lines = get_undelivered_lines(client, order["OrderID"])
+
+            if not lines:
+                log.info(f"Order #{order_number} ({customer}): skip — geen openstaande regels")
+                continue
+
+            for line in lines:
+                remaining = line["Quantity"] - line.get("QuantityDelivered", 0)
+                log.info(f"  {line['ItemCode']} x{remaining}")
+
+            if dry_run:
+                results.append({
+                    "order_number": order_number,
+                    "customer": customer,
+                    "success": True,
+                    "dry_run": True,
+                })
+                continue
+
+            response = create_goods_delivery(client, order, lines)
+            delivery_number = response["d"]["DeliveryNumber"]
+            log.info(f"Order #{order_number} ({customer}): delivery #{delivery_number} aangemaakt")
+
+            results.append({
+                "order_number": order_number,
+                "customer": customer,
+                "success": True,
+                "delivery_number": delivery_number,
+            })
+
+        except Exception as e:
+            log.error(f"Order #{order_number} ({customer}): FOUT — {e}")
+            results.append({
+                "order_number": order_number,
+                "customer": customer,
+                "success": False,
+                "error": str(e),
+            })
+
+    return results
+
+
+if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+        handlers=[
+            logging.FileHandler("auto_delivery.log"),
+            logging.StreamHandler(),
+        ],
+    )
+    dry_run = "--dry-run" in sys.argv
+    client = ExactClient()
+    mode = "(DRY RUN) " if dry_run else ""
+    log.info(f"=== Auto Delivery {mode}gestart ===")
+
+    results = process_open_orders(client, dry_run=dry_run)
+
+    success = [r for r in results if r["success"]]
+    failed = [r for r in results if not r["success"]]
+    log.info(f"Klaar: {len(success)} gelukt, {len(failed)} mislukt")

@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock
 import pytest
-from auto_delivery import get_open_kantoor_orders, get_undelivered_lines, create_goods_delivery
+from auto_delivery import get_open_kantoor_orders, get_undelivered_lines, create_goods_delivery, process_open_orders
 
 
 def test_get_open_kantoor_orders_filters_correctly():
@@ -76,3 +76,53 @@ def test_create_goods_delivery_empty_lines_raises():
     mock_client = MagicMock()
     with pytest.raises(ValueError):
         create_goods_delivery(mock_client, {"OrderNumber": 1}, [])
+
+
+def test_process_open_orders_end_to_end():
+    mock_client = MagicMock()
+    mock_client.get.side_effect = [
+        # Call 1: open orders
+        [{"OrderID": "o1", "OrderNumber": 9556, "CreatorFullName": "Kantoor EARTH",
+          "DeliveryStatus": 12, "Description": "2026.01/153.032",
+          "DeliveryDate": "/Date(1775692800000)/", "OrderedByName": "Kreko B.V."}],
+        # Call 2: order lines voor o1
+        [{"ID": "l1", "ItemCode": "EW72306", "Quantity": 84, "QuantityDelivered": 0}],
+    ]
+    mock_client.post.return_value = {"d": {"EntryID": "gd-1", "DeliveryNumber": 7820}}
+
+    results = process_open_orders(mock_client)
+
+    assert len(results) == 1
+    assert results[0]["order_number"] == 9556
+    assert results[0]["success"] is True
+    assert results[0]["delivery_number"] == 7820
+
+
+def test_process_open_orders_skips_no_lines():
+    mock_client = MagicMock()
+    mock_client.get.side_effect = [
+        [{"OrderID": "o1", "OrderNumber": 9999, "CreatorFullName": "Kantoor EARTH",
+          "DeliveryStatus": 12, "Description": "test", "DeliveryDate": None,
+          "OrderedByName": "Test B.V."}],
+        [],  # geen openstaande regels
+    ]
+
+    results = process_open_orders(mock_client)
+    assert len(results) == 0
+
+
+def test_process_open_orders_handles_api_error():
+    mock_client = MagicMock()
+    mock_client.get.side_effect = [
+        [{"OrderID": "o1", "OrderNumber": 9999, "CreatorFullName": "Kantoor EARTH",
+          "DeliveryStatus": 12, "Description": "test", "DeliveryDate": None,
+          "OrderedByName": "Test B.V."}],
+        [{"ID": "l1", "ItemCode": "EW72306", "Quantity": 10, "QuantityDelivered": 0}],
+    ]
+    mock_client.post.side_effect = Exception("API error 500")
+
+    results = process_open_orders(mock_client)
+
+    assert len(results) == 1
+    assert results[0]["success"] is False
+    assert "API error" in results[0]["error"]

@@ -9,12 +9,54 @@ import { StatusBadge } from "@/components/status-badge";
 import { SourceBadge } from "@/components/source-badge";
 
 export default function OrderDetailPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, session, loading: authLoading } = useAuth();
   const router = useRouter();
   const { id } = useParams<{ id: string }>();
   const [order, setOrder] = useState<Order | null>(null);
   const [lines, setLines] = useState<OrderLine[]>([]);
   const [loading, setLoading] = useState(true);
+  const [delivering, setDelivering] = useState(false);
+  const [deliveryResult, setDeliveryResult] = useState<{
+    success: boolean;
+    message: string;
+  } | null>(null);
+
+  async function handleDeliver() {
+    if (!confirm("Weet je zeker dat je deze order wilt verzenden?")) return;
+    setDelivering(true);
+    setDeliveryResult(null);
+    try {
+      const res = await fetch(`/api/orders/${id}/deliver`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setDeliveryResult({ success: false, message: data.error });
+      } else {
+        setDeliveryResult({
+          success: true,
+          message: `Verzonden! Delivery #${data.delivery_number} aangemaakt (${data.lines_count} regel${data.lines_count === 1 ? "" : "s"})`,
+        });
+        // Herlaad order data om nieuwe status te tonen
+        const { data: updated } = await supabase
+          .from("orders")
+          .select("*")
+          .eq("id", id)
+          .single();
+        if (updated) setOrder(updated);
+      }
+    } catch {
+      setDeliveryResult({
+        success: false,
+        message: "Netwerkfout — probeer opnieuw",
+      });
+    } finally {
+      setDelivering(false);
+    }
+  }
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -24,7 +66,7 @@ export default function OrderDetailPage() {
   }, [user, authLoading, router]);
 
   useEffect(() => {
-    async function fetch() {
+    async function loadOrder() {
       const [orderRes, linesRes] = await Promise.all([
         supabase.from("orders").select("*").eq("id", id).single(),
         supabase
@@ -37,7 +79,7 @@ export default function OrderDetailPage() {
       setLines(linesRes.data || []);
       setLoading(false);
     }
-    fetch();
+    loadOrder();
   }, [id]);
 
   if (loading)
@@ -69,11 +111,32 @@ export default function OrderDetailPage() {
             </h2>
             <p className="text-gray-600">{order.customer_name}</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
             <SourceBadge source={order.source} />
             <StatusBadge status={order.delivery_status} />
+            {order.delivery_status !== 21 && (
+              <button
+                onClick={handleDeliver}
+                disabled={delivering}
+                className="ml-2 px-4 py-1.5 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {delivering ? "Bezig..." : "Verzenden"}
+              </button>
+            )}
           </div>
         </div>
+
+        {deliveryResult && (
+          <div
+            className={`mb-4 px-4 py-3 rounded-md text-sm ${
+              deliveryResult.success
+                ? "bg-green-50 text-green-800 border border-green-200"
+                : "bg-red-50 text-red-800 border border-red-200"
+            }`}
+          >
+            {deliveryResult.message}
+          </div>
+        )}
 
         <dl className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
           <div>

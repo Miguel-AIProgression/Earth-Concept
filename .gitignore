@@ -1,4 +1,5 @@
 .env
+.env.local
 exact_tokens.json
 sync_state.json
 auto_delivery.log

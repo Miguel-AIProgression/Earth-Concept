@@ -91,13 +91,14 @@ class ExactClient:
 
     def _request(self, method, url, **kwargs):
         """Doe een request met retry bij 401/429."""
-        for attempt in range(5):
+        for attempt in range(7):
             r = requests.request(method, url, headers=self._headers(), **kwargs)
             if r.status_code == 401:
                 self.refresh_token()
                 continue
             if r.status_code == 429:
-                wait = min(2 ** attempt, 30)
+                retry_after = r.headers.get("Retry-After")
+                wait = int(retry_after) if retry_after else min(5 * (2 ** attempt), 60)
                 time.sleep(wait)
                 continue
             r.raise_for_status()
@@ -109,6 +110,7 @@ class ExactClient:
         """GET met automatische paginatie (Exact retourneert max 60 per page)."""
         url = f"{self.base_url}{endpoint}"
         all_results = []
+        page = 0
         while url:
             r = self._request("GET", url, params=params)
             data = r.json()
@@ -120,6 +122,10 @@ class ExactClient:
                 all_results.extend(d if isinstance(d, list) else [])
                 url = None
             params = None  # params zitten al in __next URL
+            page += 1
+            # Rate limiting: wacht tussen pagina's om 429 te voorkomen
+            if url:
+                time.sleep(1)
         return all_results
 
     def post(self, endpoint, payload):

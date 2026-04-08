@@ -86,17 +86,35 @@ def fetch_modified_orders(exact, since):
     return orders
 
 
-def fetch_open_orders(exact):
-    """Haal alle orders op die nog niet volledig afgerond zijn.
+def fetch_open_orders(exact, sb):
+    """Hercontroleer alleen orders die in Supabase nog als 'open' staan.
 
-    Dit vangt statuswijzigingen op die we anders zouden missen,
-    bijv. een levering die van 'Open' naar 'Volledig' gaat.
+    In plaats van ALLE open orders uit Exact op te halen (wat duizenden
+    resultaten en rate limits oplevert), halen we alleen de order IDs op
+    die we al kennen en die nog niet volledig afgerond zijn.
     """
-    orders = exact.get("/salesorder/SalesOrders", params={
-        "$filter": "DeliveryStatus ne 21 or InvoiceStatus ne 2",
-        "$select": f"{ORDER_FIELDS},Modified",
-        "$orderby": "OrderDate desc",
-    })
+    if sb is None:
+        return []
+
+    # Haal orders uit Supabase die nog niet volledig geleverd+gefactureerd zijn
+    result = sb.table("orders").select("exact_order_id, order_number").or_(
+        "delivery_status.neq.21,invoice_status.neq.2"
+    ).execute()
+
+    if not result.data:
+        return []
+
+    # Haal per order de actuele status op uit Exact (in batches)
+    orders = []
+    for row in result.data:
+        try:
+            batch = exact.get("/salesorder/SalesOrders", params={
+                "$filter": f"OrderID eq guid'{row['exact_order_id']}'",
+                "$select": f"{ORDER_FIELDS},Modified",
+            })
+            orders.extend(batch)
+        except Exception as e:
+            log.warning(f"Kon order #{row['order_number']} niet ophalen: {e}")
     return orders
 
 
@@ -157,7 +175,8 @@ def sync_incremental(exact=None, dry_run=False):
         modified = fetch_modified_orders(exact, last_sync)
         log.info(f"{len(modified)} gewijzigde orders sinds laatste sync")
 
-        open_orders = fetch_open_orders(exact)
+        sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+        open_orders = fetch_open_orders(exact, sb)
         log.info(f"{len(open_orders)} openstaande orders hercontroleerd")
 
         # Combineer en deduplicate op OrderID

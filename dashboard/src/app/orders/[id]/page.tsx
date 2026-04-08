@@ -114,7 +114,17 @@ export default function OrderDetailPage() {
           <div className="flex items-center gap-2">
             <SourceBadge source={order.source} />
             <StatusBadge status={order.delivery_status} />
-            {order.delivery_status !== 21 && (
+            {((order.description || "") + (order.customer_name || ""))
+              .toLowerCase()
+              .includes("afhaal") && (
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                Afhaal
+              </span>
+            )}
+            {order.delivery_status !== 21 &&
+              !((order.description || "") + (order.customer_name || ""))
+                .toLowerCase()
+                .includes("afhaal") && (
               <button
                 onClick={handleDeliver}
                 disabled={delivering}
@@ -163,7 +173,7 @@ export default function OrderDetailPage() {
             <dt className="text-gray-500">Bedrag</dt>
             <dd className="font-medium">
               {order.amount != null
-                ? `\u20AC ${Number(order.amount).toFixed(2)}`
+                ? `\u20AC ${Number(order.amount).toLocaleString("nl-NL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                 : "-"}
             </dd>
           </div>
@@ -241,12 +251,12 @@ export default function OrderDetailPage() {
                   </td>
                   <td className="px-4 py-3 text-sm text-right">
                     {line.unit_price != null
-                      ? `\u20AC ${Number(line.unit_price).toFixed(2)}`
+                      ? `\u20AC ${Number(line.unit_price).toLocaleString("nl-NL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                       : "-"}
                   </td>
                   <td className="px-4 py-3 text-sm text-right font-medium">
                     {line.amount != null
-                      ? `\u20AC ${Number(line.amount).toFixed(2)}`
+                      ? `\u20AC ${Number(line.amount).toLocaleString("nl-NL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                       : "-"}
                   </td>
                 </tr>
@@ -261,7 +271,7 @@ export default function OrderDetailPage() {
                   Totaal
                 </td>
                 <td className="px-4 py-3 text-sm text-right font-bold text-gray-900">
-                  &euro; {lineTotal.toFixed(2)}
+                  &euro; {lineTotal.toLocaleString("nl-NL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </td>
               </tr>
             </tfoot>

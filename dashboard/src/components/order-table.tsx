@@ -70,7 +70,7 @@ export function OrderTable({ orders }: { orders: Order[] }) {
               </td>
               <td className="px-4 py-3 text-sm text-gray-700 text-right">
                 {order.amount != null
-                  ? `\u20AC ${Number(order.amount).toFixed(2)}`
+                  ? `\u20AC ${Number(order.amount).toLocaleString("nl-NL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                   : "-"}
               </td>
               <td className="px-4 py-3">

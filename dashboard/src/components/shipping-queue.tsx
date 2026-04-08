@@ -5,6 +5,12 @@ import Link from "next/link";
 import { Order } from "@/lib/supabase";
 import { SourceBadge } from "./source-badge";
 
+function isAfhaalOrder(order: Order): boolean {
+  const desc = (order.description || "").toLowerCase();
+  const customer = (order.customer_name || "").toLowerCase();
+  return desc.includes("afhaal") || customer.includes("afhaal");
+}
+
 type UrgencyGroup = {
   key: string;
   title: string;
@@ -258,6 +264,11 @@ function GroupCard({
                     {order.customer_name || "-"}
                   </span>
                   <SourceBadge source={order.source} />
+                  {isAfhaalOrder(order) && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                      Afhaal
+                    </span>
+                  )}
                 </Link>
                 <div className="flex items-center gap-4 shrink-0">
                   <span className="text-xs text-gray-500">
@@ -271,11 +282,17 @@ function GroupCard({
                       minimumFractionDigits: 2,
                     })}
                   </span>
-                  <ShipButton
-                    orderId={order.id}
-                    accessToken={accessToken}
-                    onShipped={() => onOrderShipped(order.id)}
-                  />
+                  {isAfhaalOrder(order) ? (
+                    <span className="px-3 py-1 text-xs font-medium text-purple-700 whitespace-nowrap">
+                      Wordt opgehaald
+                    </span>
+                  ) : (
+                    <ShipButton
+                      orderId={order.id}
+                      accessToken={accessToken}
+                      onShipped={() => onOrderShipped(order.id)}
+                    />
+                  )}
                 </div>
               </div>
             ))}

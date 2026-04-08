@@ -21,3 +21,13 @@ def get_open_kantoor_orders(client):
     return [o for o in orders
             if o.get("CreatorFullName") == CREATOR_KANTOOR
             and o.get("DeliveryStatus") == 12]
+
+
+def get_undelivered_lines(client, order_id):
+    """Haal orderregels op die nog niet (volledig) afgeleverd zijn."""
+    lines = client.get("/salesorder/SalesOrderLines", params={
+        "$filter": f"OrderID eq guid'{order_id}'",
+        "$select": "ID,OrderID,OrderNumber,ItemCode,ItemDescription,"
+                   "Quantity,QuantityDelivered,DeliveryDate",
+    })
+    return [l for l in lines if l.get("Quantity", 0) > l.get("QuantityDelivered", 0)]

@@ -77,6 +77,7 @@ def save_last_sync(timestamp):
 
 def fetch_modified_orders(exact, since):
     """Haal orders op die gewijzigd zijn sinds het opgegeven tijdstip."""
+    since = since.strip('"')
     orders = exact.get("/salesorder/SalesOrders", params={
         "$filter": f"Modified ge datetime'{since}'",
         "$select": f"{ORDER_FIELDS},Modified",

@@ -31,3 +31,25 @@ def get_undelivered_lines(client, order_id):
                    "Quantity,QuantityDelivered,DeliveryDate",
     })
     return [l for l in lines if l.get("Quantity", 0) > l.get("QuantityDelivered", 0)]
+
+
+def create_goods_delivery(client, order, lines):
+    """Maak een GoodsDelivery aan voor een order met de gegeven regels."""
+    if not lines:
+        raise ValueError(f"Geen regels voor order #{order.get('OrderNumber')}")
+
+    delivery_lines = []
+    for line in lines:
+        remaining = line["Quantity"] - line.get("QuantityDelivered", 0)
+        delivery_lines.append({
+            "SalesOrderLineID": line["ID"],
+            "QuantityDelivered": remaining,
+        })
+
+    payload = {
+        "Description": order.get("Description", ""),
+        "DeliveryDate": order.get("DeliveryDate"),
+        "GoodsDeliveryLines": delivery_lines,
+    }
+
+    return client.post("/salesorder/GoodsDeliveries", payload)

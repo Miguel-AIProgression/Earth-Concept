@@ -1,17 +1,16 @@
-"""Automatisch GoodsDeliveries aanmaken voor Kantoor EARTH (Semso/EDI) orders."""
+"""Automatisch GoodsDeliveries aanmaken voor open orders (excl. EDI-klanten)."""
 
 import sys
 import logging
 
+from edi_exclusions import is_edi_customer
 from exact_client import ExactClient
-
-CREATOR_KANTOOR = "Kantoor EARTH"
 
 log = logging.getLogger(__name__)
 
 
-def get_open_kantoor_orders(client):
-    """Haal alle open orders op die zijn aangemaakt door Kantoor EARTH."""
+def get_open_non_edi_orders(client):
+    """Haal alle open orders op, behalve orders voor EDI-klanten."""
     orders = client.get("/salesorder/SalesOrders", params={
         "$filter": "DeliveryStatus eq 12",
         "$select": "OrderID,OrderNumber,OrderDate,DeliveryStatus,"
@@ -19,8 +18,8 @@ def get_open_kantoor_orders(client):
         "$orderby": "OrderDate desc",
     })
     return [o for o in orders
-            if o.get("CreatorFullName") == CREATOR_KANTOOR
-            and o.get("DeliveryStatus") == 12]
+            if o.get("DeliveryStatus") == 12
+            and not is_edi_customer(o.get("OrderedByName"))]
 
 
 def get_undelivered_lines(client, order_id):
@@ -56,12 +55,12 @@ def create_goods_delivery(client, order, lines):
 
 
 def process_open_orders(client, dry_run=False):
-    """Verwerk alle open Kantoor EARTH orders: maak GoodsDeliveries aan."""
-    orders = get_open_kantoor_orders(client)
-    log.info(f"{len(orders)} open Kantoor EARTH orders gevonden")
+    """Verwerk alle open niet-EDI orders: maak GoodsDeliveries aan."""
+    orders = get_open_non_edi_orders(client)
+    log.info(f"{len(orders)} open niet-EDI orders gevonden")
 
     if dry_run:
-        log.info("DRY RUN — er worden geen deliveries aangemaakt")
+        log.info("DRY RUN - er worden geen deliveries aangemaakt")
 
     results = []
 
@@ -73,7 +72,7 @@ def process_open_orders(client, dry_run=False):
             lines = get_undelivered_lines(client, order["OrderID"])
 
             if not lines:
-                log.info(f"Order #{order_number} ({customer}): skip — geen openstaande regels")
+                log.info(f"Order #{order_number} ({customer}): skip - geen openstaande regels")
                 continue
 
             for line in lines:
@@ -101,7 +100,7 @@ def process_open_orders(client, dry_run=False):
             })
 
         except Exception as e:
-            log.error(f"Order #{order_number} ({customer}): FOUT — {e}")
+            log.error(f"Order #{order_number} ({customer}): FOUT - {e}")
             results.append({
                 "order_number": order_number,
                 "customer": customer,

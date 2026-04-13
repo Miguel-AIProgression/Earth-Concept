@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 from supabase import create_client
 from exact_client import ExactClient
+from edi_exclusions import is_edi_customer
 
 load_dotenv()
 log = logging.getLogger(__name__)
@@ -37,13 +38,6 @@ def parse_odata_date(date_str):
         return None
 
 
-def classify_source(creator):
-    """Bepaal of een order via Semso/EDI of handmatig is aangemaakt."""
-    if creator == "Kantoor EARTH":
-        return "semso_edi"
-    return "manual"
-
-
 def transform_order(raw):
     return {
         "exact_order_id": raw["OrderID"],
@@ -54,7 +48,6 @@ def transform_order(raw):
         "invoice_status": raw.get("InvoiceStatus"),
         "invoice_status_description": raw.get("InvoiceStatusDescription"),
         "creator": raw.get("CreatorFullName"),
-        "source": classify_source(raw.get("CreatorFullName")),
         "customer_name": raw.get("OrderedByName"),
         "description": raw.get("Description"),
         "your_ref": raw.get("YourRef"),
@@ -90,6 +83,12 @@ def sync_all(exact=None, dry_run=False):
         "$orderby": "OrderDate desc",
     })
     log.info(f"{len(orders)} orders gevonden")
+
+    before = len(orders)
+    orders = [o for o in orders if not is_edi_customer(o.get("OrderedByName"))]
+    skipped = before - len(orders)
+    if skipped:
+        log.info(f"{skipped} EDI-orders overgeslagen, {len(orders)} te verwerken")
 
     if dry_run:
         for o in orders[:10]:

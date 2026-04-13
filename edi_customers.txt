@@ -1,0 +1,4 @@
+# EDI-klanten - 1 naam per regel (case-insensitive, exacte match op OrderedByName uit Exact).
+# Deze klanten worden door de Earth Water automatisering GENEGEERD omdat ze via EDI lopen.
+# Namen halen uit JET_EDI - Earth Concepts.xlsx (Blad3) of uit Exact debiteurenlijst.
+# Voeg toe door een regel toe te voegen. Leeg laten mag - dan filtert er niks.

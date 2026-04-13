@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -258,3 +258,22 @@ def test_geen_live_post(monkeypatch):
     src = Path(mod.__file__).read_text(encoding="utf-8")
     assert "requests.post" not in src
     assert "client.post" not in src
+
+
+def test_edi_klant_geskipt():
+    delivery = [
+        {"order_number": "SO001", "customer_name": "Bidfood Geleen (EW-EDI)",
+         "item_code": "ITEM-A", "quantity_delivered": 120, "unit_price": 10.0},
+        {"order_number": "SO002", "customer_name": "Minor Hotels",
+         "item_code": "ITEM-A", "quantity_delivered": 50, "unit_price": 10.0},
+    ]
+    orders = [
+        _make_order("SO001"),
+        _make_order("SO002", order_id="order-guid-2"),
+    ]
+    with patch("invoice_from_delivery.is_edi_customer",
+               side_effect=lambda n: n and "EW-EDI" in n):
+        matches, discrepancies = match_deliveries_to_orders(delivery, orders)
+    order_numbers = [m["order_number"] for m in matches]
+    assert order_numbers == ["SO002"]
+    assert not any(d["order_number"] == "SO001" for d in discrepancies)

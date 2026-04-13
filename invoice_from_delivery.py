@@ -12,6 +12,8 @@ from typing import Any
 
 import pandas as pd
 
+from edi_exclusions import is_edi_customer
+
 
 # Mapping Excel-kolomnaam -> genormaliseerde snake_case key.
 _COLUMN_MAP = {
@@ -101,6 +103,9 @@ def match_deliveries_to_orders(
         if not order_number:
             continue
         order_number = str(order_number)
+
+        if is_edi_customer(row.get("customer_name")):
+            continue
 
         exact_order = orders_by_num.get(order_number)
         if exact_order is None:

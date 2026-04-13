@@ -7,6 +7,7 @@ Stap 3: Plak de code in de terminal -> tokens worden opgeslagen + tests draaien
 
 import os
 import json
+import time
 import webbrowser
 import requests
 from dotenv import load_dotenv
@@ -23,9 +24,32 @@ TOKEN_URL = "https://start.exactonline.nl/api/oauth2/token"
 API_BASE = f"https://start.exactonline.nl/api/v1/{DIVISION}"
 
 TOKEN_FILE = "exact_tokens.json"
+TOKEN_CONFIG_KEY = "exact_tokens"
+
+
+def _supabase_client():
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_SERVICE_KEY")
+    if url and key:
+        from supabase import create_client
+        return create_client(url, key)
+    return None
 
 
 def save_tokens(tokens):
+    # Voeg expires_at toe met 30s marge (expires_in is in seconden, default 600)
+    tokens["expires_at"] = time.time() + int(tokens.get("expires_in", 600)) - 30
+    sb = _supabase_client()
+    if sb:
+        try:
+            sb.table("config").upsert({
+                "key": TOKEN_CONFIG_KEY,
+                "value": tokens,
+                "updated_at": "now()",
+            }, on_conflict="key").execute()
+            print("Tokens ook opgeslagen in Supabase config")
+        except Exception as e:
+            print(f"Waarschuwing: tokens niet in Supabase opgeslagen: {e}")
     with open(TOKEN_FILE, "w") as f:
         json.dump(tokens, f, indent=2)
     print(f"Tokens opgeslagen in {TOKEN_FILE}")
@@ -52,17 +76,29 @@ def refresh_access_token(refresh_token):
     else:
         print(f"Token refresh mislukt: {response.status_code}")
         print(response.text)
+        if response.status_code in (400, 401):
+            try:
+                from alerts import send_alert
+                send_alert(
+                    "Exact refresh_token verlopen",
+                    f"Refresh mislukt ({response.status_code}):\n{response.text}\n\n"
+                    "Run `python exact_auth.py` om opnieuw in te loggen.",
+                )
+            except Exception as e:
+                print(f"Alert versturen mislukt: {e}")
         return None
 
 
 def get_access_token():
     tokens = load_tokens()
     if not tokens:
-        return None
+        raise RuntimeError("Geen tokens — draai exact_auth.py handmatig voor eerste login")
+    if tokens.get("expires_at", 0) > time.time():
+        return tokens["access_token"]
     refreshed = refresh_access_token(tokens["refresh_token"])
-    if refreshed:
-        return refreshed["access_token"]
-    return tokens["access_token"]
+    if not refreshed:
+        raise RuntimeError("Refresh mislukt — refresh_token verlopen, handmatig opnieuw inloggen")
+    return refreshed["access_token"]
 
 
 def api_get(endpoint):

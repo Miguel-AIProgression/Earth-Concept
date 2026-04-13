@@ -16,7 +16,6 @@ export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<View>("shipping");
-  const [source, setSource] = useState("");
   const [status, setStatus] = useState("");
 
   async function fetchOrders() {
@@ -26,7 +25,6 @@ export default function OrdersPage() {
       .select("*")
       .order("order_date", { ascending: false });
 
-    if (source) query = query.eq("source", source);
     if (status) query = query.eq("delivery_status", parseInt(status));
 
     const { data, error } = await query;
@@ -37,7 +35,7 @@ export default function OrdersPage() {
 
   useEffect(() => {
     fetchOrders();
-  }, [source, status]);
+  }, [status]);
 
   function handleOrderShipped(orderId: string) {
     setOrders((prev) =>
@@ -93,9 +91,7 @@ export default function OrdersPage() {
 
       {view === "list" && (
         <OrderFilters
-          source={source}
           status={status}
-          onSourceChange={setSource}
           onStatusChange={setStatus}
         />
       )}

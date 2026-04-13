@@ -3,7 +3,6 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Order } from "@/lib/supabase";
-import { SourceBadge } from "./source-badge";
 
 type FunnelStage = {
   key: string;
@@ -133,7 +132,6 @@ function StageCard({ stage, defaultOpen }: { stage: FunnelStage; defaultOpen: bo
                   <span className="text-sm text-gray-900 truncate">
                     {order.customer_name || "-"}
                   </span>
-                  <SourceBadge source={order.source} />
                 </div>
                 <div className="flex items-center gap-4 shrink-0">
                   <span className="text-xs text-gray-500">

@@ -15,7 +15,6 @@ export type Order = {
   invoice_status: number;
   invoice_status_description: string;
   creator: string;
-  source: string;
   customer_name: string;
   description: string;
   your_ref: string;

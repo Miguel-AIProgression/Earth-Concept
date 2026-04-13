@@ -6,7 +6,6 @@ import Link from "next/link";
 import { supabase, Order, OrderLine } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import { StatusBadge } from "@/components/status-badge";
-import { SourceBadge } from "@/components/source-badge";
 
 export default function OrderDetailPage() {
   const { user, session, loading: authLoading } = useAuth();
@@ -112,7 +111,6 @@ export default function OrderDetailPage() {
             <p className="text-gray-600">{order.customer_name}</p>
           </div>
           <div className="flex items-center gap-2">
-            <SourceBadge source={order.source} />
             <StatusBadge status={order.delivery_status} />
             {((order.description || "") + (order.customer_name || ""))
               .toLowerCase()

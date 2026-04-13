@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { Order } from "@/lib/supabase";
 import { StatusBadge } from "./status-badge";
-import { SourceBadge } from "./source-badge";
 
 export function OrderTable({ orders }: { orders: Order[] }) {
   if (orders.length === 0) {
@@ -25,9 +24,6 @@ export function OrderTable({ orders }: { orders: Order[] }) {
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
               Klant
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-              Bron
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
               Referentie
@@ -61,9 +57,6 @@ export function OrderTable({ orders }: { orders: Order[] }) {
               </td>
               <td className="px-4 py-3 text-sm text-gray-900">
                 {order.customer_name || "-"}
-              </td>
-              <td className="px-4 py-3">
-                <SourceBadge source={order.source} />
               </td>
               <td className="px-4 py-3 text-sm text-gray-600">
                 {order.your_ref || "-"}

@@ -3,7 +3,6 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Order } from "@/lib/supabase";
-import { SourceBadge } from "./source-badge";
 
 function isAfhaalOrder(order: Order): boolean {
   const desc = (order.description || "").toLowerCase();
@@ -263,7 +262,6 @@ function GroupCard({
                   <span className="text-sm text-gray-900 truncate">
                     {order.customer_name || "-"}
                   </span>
-                  <SourceBadge source={order.source} />
                   {isAfhaalOrder(order) && (
                     <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
                       Afhaal

@@ -176,7 +176,9 @@ def save_message(sb, msg: dict) -> dict:
         "attachments": msg.get("attachments_meta", []),
         "parse_status": "pending",
     }
-    res = sb.table("incoming_orders").insert(row).execute()
+    res = sb.table("incoming_orders").upsert(
+        row, on_conflict="message_id", ignore_duplicates=True
+    ).execute()
     return res.data[0] if res.data else row
 
 

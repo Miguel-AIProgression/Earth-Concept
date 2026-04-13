@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from sync_incremental import (
+    FINAL_STATUS_FILTER,
     load_last_sync,
     save_last_sync,
     fetch_modified_orders,
@@ -44,13 +45,20 @@ def test_fetch_modified_orders_uses_correct_filter():
 
 
 def test_fetch_open_orders_uses_correct_filter():
-    mock = MagicMock()
-    mock.get.return_value = [{"OrderID": "o1"}]
+    mock_exact = MagicMock()
+    mock_exact.get.return_value = [{"OrderID": "o1"}]
+    mock_sb = MagicMock()
+    mock_sb.table.return_value.select.return_value.or_.return_value.execute.return_value = MagicMock(
+        data=[{"exact_order_id": "guid-1", "order_number": 9556}]
+    )
 
-    result = fetch_open_orders(mock)
+    result = fetch_open_orders(mock_exact, mock_sb)
 
-    call_args = mock.get.call_args
-    assert "DeliveryStatus ne 21" in call_args[1]["params"]["$filter"]
+    mock_sb.table.return_value.select.return_value.or_.assert_called_once_with(
+        FINAL_STATUS_FILTER
+    )
+    call_args = mock_exact.get.call_args
+    assert "OrderID eq guid'guid-1'" in call_args[1]["params"]["$filter"]
     assert len(result) == 1
 
 

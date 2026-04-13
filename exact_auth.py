@@ -56,6 +56,14 @@ def save_tokens(tokens):
 
 
 def load_tokens():
+    sb = _supabase_client()
+    if sb:
+        try:
+            result = sb.table("config").select("value").eq("key", TOKEN_CONFIG_KEY).execute()
+            if result.data:
+                return result.data[0]["value"]
+        except Exception:
+            pass
     if os.path.exists(TOKEN_FILE):
         with open(TOKEN_FILE) as f:
             return json.load(f)

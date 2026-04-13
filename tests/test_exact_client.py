@@ -89,3 +89,75 @@ def test_retry_on_401():
 
     assert len(results) == 1
     assert results[0]["Name"] == "test"
+
+
+def test_refresh_token_reloads_latest_shared_refresh_token():
+    client = ExactClient.__new__(ExactClient)
+    client.client_id = "test_id"
+    client.client_secret = "test_secret"
+    client.token_file = "test_tokens.json"
+    client._sb = None
+    client.tokens = {
+        "access_token": "old_access",
+        "refresh_token": "stale_refresh",
+    }
+    client._access_token = "old_access"
+
+    resp_401 = MagicMock()
+    resp_401.status_code = 401
+
+    resp_ok = MagicMock()
+    resp_ok.status_code = 200
+    resp_ok.json.return_value = {
+        "access_token": "new_access",
+        "refresh_token": "new_refresh",
+    }
+
+    with patch.object(
+        client,
+        "_load_tokens",
+        return_value={
+            "access_token": "shared_access",
+            "refresh_token": "shared_refresh",
+        },
+    ):
+        with patch("requests.post", side_effect=[resp_401, resp_ok]) as mock_post:
+            with patch("builtins.open", MagicMock()):
+                with patch("json.dump"):
+                    token = client.refresh_token()
+
+    assert token == "new_access"
+    assert mock_post.call_args_list[1].kwargs["data"]["refresh_token"] == "shared_refresh"
+
+
+def test_retry_on_401_uses_reloaded_access_token_before_refresh():
+    client = ExactClient.__new__(ExactClient)
+    client.base_url = "https://start.exactonline.nl/api/v1/2050702"
+    client._access_token = "expired"
+    client.tokens = {
+        "access_token": "expired",
+        "refresh_token": "refresh",
+    }
+
+    resp_401 = MagicMock()
+    resp_401.status_code = 401
+
+    resp_ok = MagicMock()
+    resp_ok.status_code = 200
+    resp_ok.json.return_value = {"d": {"results": [{"Name": "shared-token"}]}}
+
+    with patch.object(
+        client,
+        "_load_tokens",
+        return_value={
+            "access_token": "shared_access",
+            "refresh_token": "shared_refresh",
+        },
+    ):
+        with patch("requests.request", side_effect=[resp_401, resp_ok]):
+            with patch.object(client, "refresh_token") as refresh_mock:
+                results = client.get("/crm/Accounts")
+
+    refresh_mock.assert_not_called()
+    assert client._access_token == "shared_access"
+    assert results[0]["Name"] == "shared-token"

@@ -17,6 +17,7 @@ Mogelijke parse_status waarden in incoming_orders:
 
 from __future__ import annotations
 
+import calendar
 import logging
 from datetime import datetime
 from typing import Any
@@ -123,7 +124,7 @@ def match_items(client, lines: list[dict]) -> list[dict]:
 def _date_to_odata(date_str: str) -> str:
     """YYYY-MM-DD -> /Date(ms)/ formaat zoals Exact verwacht."""
     dt = datetime.strptime(date_str, "%Y-%m-%d")
-    ms = int(dt.timestamp() * 1000)
+    ms = calendar.timegm(dt.timetuple()) * 1000
     return f"/Date({ms})/"
 
 

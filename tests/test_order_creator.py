@@ -125,7 +125,8 @@ def test_build_salesorder_payload_basis():
 def test_build_salesorder_payload_datum_odata():
     parsed = {"customer_reference": "X", "delivery_date": "2026-05-01"}
     payload = build_salesorder_payload(parsed, "acc", [_matched_line()])
-    expected_ms = int(datetime.strptime("2026-05-01", "%Y-%m-%d").timestamp() * 1000)
+    import calendar
+    expected_ms = calendar.timegm(datetime(2026, 5, 1).timetuple()) * 1000
     assert payload["DeliveryDate"] == f"/Date({expected_ms})/"
 
 

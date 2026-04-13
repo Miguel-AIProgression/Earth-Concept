@@ -37,6 +37,22 @@ def test_refresh_mislukt_raises():
             get_access_token()
 
 
+def test_load_tokens_uit_supabase_als_file_niet_bestaat():
+    from unittest.mock import MagicMock
+    from exact_auth import load_tokens
+
+    sb = MagicMock()
+    sb.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [
+        {"value": {"access_token": "from-sb", "refresh_token": "r"}}
+    ]
+
+    with patch("exact_auth._supabase_client", return_value=sb), \
+         patch("exact_auth.os.path.exists", return_value=False):
+        result = load_tokens()
+
+    assert result == {"access_token": "from-sb", "refresh_token": "r"}
+
+
 def test_save_tokens_zet_expires_at():
     tokens = {"access_token": "a", "refresh_token": "r", "expires_in": 600}
     before = time.time()

@@ -1,4 +1,40 @@
 # EDI-klanten - 1 naam per regel (case-insensitive, exacte match op OrderedByName uit Exact).
 # Deze klanten worden door de Earth Water automatisering GENEGEERD omdat ze via EDI lopen.
-# Namen halen uit JET_EDI - Earth Concepts.xlsx (Blad3) of uit Exact debiteurenlijst.
+# Bron: JET_EDI - Earth Concepts.xlsx (Blad22, kolom Naam) zoals aangeleverd door Patrick.
 # Voeg toe door een regel toe te voegen. Leeg laten mag - dan filtert er niks.
+#
+# LET OP: Sommige namen waren op de screenshot rechts afgekapt. Controleer/vul aan waar nodig.
+
+Bidfood Geleen (EW-EDI)
+VHC Jongens B.V. (EW-EDI)
+Bidfood DC Hoofddorp (EW - EDI)
+Van de Mheen Foodservices (EW-EDI)
+Foodpartners (EW-EDI)
+FOOX | Groothandel de Smet (EW-EDI)
+Bidfood Utrecht (EW-EDI)
+Bidfood Zierikzee (EW-EDI)
+BidFood Den Haag (EW-EDI)
+FOOX | Bergsma Franeker (EW-EDI)
+Drankengroothandel Boonekamp (EW-EDI)
+Henk Smit (EW-EDI)
+VHC Actifood (EW-EDI)
+Hansen Dranken BV (EW-EDI)
+Hanos Food Centrum (EW-EDI)
+Huize Horeca (EW-EDI)
+Hanos Amsterdam B.V.
+Hocras / Indra 't Gooi (EW-EDI)
+Zegro DC Centraal Magazijn (EW-EDI)
+Horecagroothandel Broekhuyzen (EW-EDI)
+Bidfood Nieuwegein (EW-EDI)
+Bidfood DC Schiedam (EW-EDI)
+Van Leersum Dranken (EW-EDI)
+Bidfood Burgh Haamstede (EW-EDI)
+Sligro Mag Food 6 (EW-EDI)
+Bidfood Groningen (EW-EDI)
+Bidfood DC Drachten (EW-EDI)
+Bidfood DC Helmond (EW-EDI)
+Bidfood DC Emmen (EW-EDI)
+FOOX | West (EW-EDI)
+Bidfood Goirle (EW-EDI)
+Bidfood Ede (EW-EDI)
+Jumbo DC Nieuwegein (EW-EDI)

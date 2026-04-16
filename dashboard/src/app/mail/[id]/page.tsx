@@ -7,6 +7,7 @@ import { supabase, IncomingOrder } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import { LoginForm } from "@/components/login-form";
 import { IntakeStatusBadge } from "@/components/intake-status-badge";
+import { StatusActions } from "@/components/status-actions";
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
@@ -100,6 +101,14 @@ export default function MailDetailPage() {
             </p>
           </div>
         )}
+
+        <div className="pt-2 border-t border-gray-100">
+          <p className="text-xs uppercase text-gray-500 mb-3">Actie</p>
+          <StatusActions
+            row={row}
+            onUpdated={(patch) => setRow((r) => (r ? { ...r, ...patch } : r))}
+          />
+        </div>
       </div>
 
       {(row.attachments?.length ?? 0) > 0 && (

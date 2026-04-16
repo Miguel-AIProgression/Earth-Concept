@@ -7,8 +7,10 @@ const FILTERS: { value: ParseStatus | "all"; label: string }[] = [
   { value: "pending", label: "Nog te parsen" },
   { value: "needs_review", label: "Review nodig" },
   { value: "ready_for_approval", label: "Wacht op goedkeuring" },
+  { value: "approved", label: "Goedgekeurd" },
   { value: "created", label: "In Exact" },
   { value: "test_context", label: "Testmails" },
+  { value: "ignored", label: "Genegeerd" },
   { value: "failed", label: "Mislukt" },
 ];
 

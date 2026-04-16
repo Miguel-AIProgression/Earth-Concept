@@ -42,7 +42,7 @@ def process_pending(sb, exact_client=None, anthropic_client=None) -> dict:
 
     stats = {"parsed": 0, "matched": 0, "posted": 0, "test_context": 0, "failed": 0, "skipped": 0}
 
-    unfinished_statuses = ["pending", "parsed"]
+    unfinished_statuses = ["pending", "parsed", "approved"]
     res = (
         sb.table("incoming_orders")
         .select("*")
@@ -96,8 +96,8 @@ def process_pending(sb, exact_client=None, anthropic_client=None) -> dict:
                 continue
 
         # Stap 3: POST naar Exact -- behalve voor testafzenders
-        if status == "ready_for_approval":
-            if is_test_sender(from_addr):
+        if status in ("ready_for_approval", "approved"):
+            if status == "ready_for_approval" and is_test_sender(from_addr):
                 log.info("Testafzender %s -> blijft in dashboard zonder POST", from_addr)
                 sb.table("incoming_orders").update(
                     {"parse_status": "test_context"}

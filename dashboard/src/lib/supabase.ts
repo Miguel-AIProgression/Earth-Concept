@@ -13,6 +13,7 @@ export type ParseStatus =
   | "approved"
   | "created"
   | "test_context"
+  | "ignored"
   | "failed";
 
 export type Attachment = {

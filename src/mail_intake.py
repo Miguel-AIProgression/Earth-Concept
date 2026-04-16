@@ -12,6 +12,7 @@ import hashlib
 import imaplib
 import logging
 import os
+import re
 from email.utils import parsedate_to_datetime
 from typing import Optional
 
@@ -144,10 +145,20 @@ def message_already_seen(sb, message_id: str) -> bool:
     return bool(res.data)
 
 
+_SAFE_SEGMENT = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _safe_storage_segment(raw: str) -> str:
+    """Supabase Storage accepteert geen <, >, @, spaties e.d. in paden."""
+    return _SAFE_SEGMENT.sub("_", raw).strip("_.") or "unnamed"
+
+
 def upload_attachments(sb, message_id: str, attachments: list[dict]) -> list[dict]:
+    folder = _safe_storage_segment(message_id)
     uploaded = []
     for att in attachments:
-        path = f"{message_id}/{att['filename']}"
+        safe_name = _safe_storage_segment(att["filename"])
+        path = f"{folder}/{safe_name}"
         try:
             sb.storage.from_(BUCKET).upload(
                 path,

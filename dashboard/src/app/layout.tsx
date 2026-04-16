@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Earth Water — Orders",
-  description: "Order dashboard voor Earth Water",
+  title: "Earth Water — Order-intake",
+  description: "Monitor inkomende order-mails en hun verwerking naar Exact",
 };
 
 export default function RootLayout({

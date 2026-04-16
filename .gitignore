@@ -4,5 +4,9 @@ exact_tokens.json
 sync_state.json
 auto_delivery.log
 sync_incremental.log
+.claude/settings.local.json
+JET_EDI - Earth Concepts.xlsx
+data/
+_*.py
 __pycache__/
 *.pyc

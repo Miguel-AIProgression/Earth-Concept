@@ -1,19 +1,16 @@
-name: Mail intake + pipeline
+name: Exact Keepalive
 
 on:
   schedule:
-    # Elke 5 minuten: mails ophalen, parsen, matchen en POST naar Exact
-    - cron: "*/5 * * * *"
+    # Dagelijks om 06:30 UTC: pingt Exact Online zodat de refresh_token
+    # nooit de 30-dagen inactiviteitsgrens raakt.
+    - cron: "30 6 * * *"
   workflow_dispatch:
 
-concurrency:
-  group: mail-pipeline
-  cancel-in-progress: false
-
 jobs:
-  pipeline:
+  keepalive:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -21,23 +18,24 @@ jobs:
           python-version: "3.11"
           cache: "pip"
       - run: pip install -r requirements.txt
-      - name: Run pipeline (intake + parse + match + POST)
-        working-directory: src
+      - name: Ping Exact /Me
         env:
-          MAIL_USER: ${{ secrets.MAIL_USER }}
-          MAIL_PASS: ${{ secrets.MAIL_PASS }}
-          MAIL_HOST: imap.gmail.com
-          MAIL_PORT: "993"
           EXACT_CLIENT_ID: ${{ secrets.EXACT_CLIENT_ID }}
           EXACT_CLIENT_SECRET: ${{ secrets.EXACT_CLIENT_SECRET }}
           EXACT_DIVISION: ${{ secrets.EXACT_DIVISION }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           SMTP_FROM: ${{ secrets.SMTP_FROM }}
           ALERT_EMAIL: miguel@aiprogression.nl
-        run: python process_pipeline.py
+        working-directory: src
+        run: |
+          python - <<'PY'
+          from exact_client import ExactClient
+          c = ExactClient()
+          r = c.get("/current/Me?$select=CurrentDivision,FullName")
+          print("Keepalive OK:", r[:1] if r else r)
+          PY

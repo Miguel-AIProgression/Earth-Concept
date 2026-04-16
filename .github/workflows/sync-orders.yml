@@ -24,10 +24,40 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run incremental sync
+        id: sync
         env:
           EXACT_CLIENT_ID: ${{ secrets.EXACT_CLIENT_ID }}
           EXACT_CLIENT_SECRET: ${{ secrets.EXACT_CLIENT_SECRET }}
           EXACT_DIVISION: ${{ secrets.EXACT_DIVISION }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          ALERT_EMAIL: miguel@aiprogression.nl
+        working-directory: src
         run: python sync_incremental.py
+
+      - name: Stuur alert bij sync-fout
+        if: failure()
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          ALERT_EMAIL: miguel@aiprogression.nl
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        working-directory: src
+        run: |
+          python - <<'PY'
+          import os
+          from alerts import send_alert
+          send_alert(
+              "Sync job faalde",
+              "De GitHub Actions sync-job is gefaald.\n\n"
+              f"Logs: {os.environ.get('RUN_URL','(onbekend)')}\n"
+          )
+          PY

@@ -65,7 +65,12 @@ export default function MailDetailPage() {
   if (!row) return <div className="text-center text-red-600 py-12">Mail niet gevonden.</div>;
 
   const parsed = row.parsed_data;
-  const lines = parsed?.lines ?? [];
+  // Alleen regels met daadwerkelijke bestelhoeveelheid tonen.
+  // Template-PDF's hebben vaak alle producten als regel met quantity 0.
+  const lines = (parsed?.lines ?? []).filter((l) => {
+    const q = l.quantity;
+    return typeof q === "number" && q > 0;
+  });
 
   return (
     <div className="space-y-6">

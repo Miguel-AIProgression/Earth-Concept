@@ -44,16 +44,19 @@ def attach_pdf_to_salesorder(
         "Type": DOCUMENT_TYPE_GENERAL,
         "Account": account_id,
     }
-    if salesorder_id:
-        # Exact accepteert stil als veld niet bestaat; wel proberen.
-        doc_payload["SalesOrder"] = salesorder_id
+    # Document is direct zichtbaar bij de SalesOrder in Exact via het
+    # integer-veld SalesOrderNumber (niet SalesOrder-GUID; die bestaat niet).
+    if salesorder_number is not None:
+        try:
+            doc_payload["SalesOrderNumber"] = int(salesorder_number)
+        except (TypeError, ValueError):
+            pass
 
     try:
         doc = exact.post("/documents/Documents", doc_payload)
     except Exception as e:
-        # Fallback: als SalesOrder-veld de POST brak, nog eens zonder.
-        log.warning("Document-aanmaak mislukt (%s); retry zonder SalesOrder-link", e)
-        doc_payload.pop("SalesOrder", None)
+        log.warning("Document-aanmaak mislukt (%s); retry zonder SalesOrderNumber", e)
+        doc_payload.pop("SalesOrderNumber", None)
         try:
             doc = exact.post("/documents/Documents", doc_payload)
         except Exception as e2:

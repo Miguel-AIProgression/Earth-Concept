@@ -194,8 +194,20 @@ class ExactClient:
                 wait = int(retry_after) if retry_after else min(5 * (2 ** attempt), 60)
                 time.sleep(wait)
                 continue
+            if r.status_code >= 400:
+                body_snippet = (r.text or "")[:800]
+                log.error(
+                    "Exact %s %s -> HTTP %s: %s",
+                    method, url, r.status_code, body_snippet,
+                )
             r.raise_for_status()
             return r
+        if r.status_code >= 400:
+            body_snippet = (r.text or "")[:800]
+            log.error(
+                "Exact %s %s -> HTTP %s (final): %s",
+                method, url, r.status_code, body_snippet,
+            )
         r.raise_for_status()
         return r
 

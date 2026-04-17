@@ -27,6 +27,51 @@ log = logging.getLogger(__name__)
 
 TEST_SENDERS = {"miguel@aiprogression.nl"}
 
+PDF_MIME_TYPES = {"application/pdf"}
+
+
+def _attach_first_pdf(sb, exact_client, row: dict, parsed_data: dict, exact_order_id, order_nr) -> None:
+    """Probeer de eerste PDF-bijlage uit de mail aan de SalesOrder te koppelen.
+
+    Faalt stil; de hoofdlogica (order in Exact) is al gelukt op dit punt.
+    """
+    from exact_documents import attach_pdf_to_salesorder
+
+    attachments = row.get("attachments") or []
+    pdf = None
+    for att in attachments:
+        if (att.get("content_type") or "").lower() in PDF_MIME_TYPES:
+            pdf = att
+            break
+    if not pdf:
+        return
+    storage_path = pdf.get("storage_path")
+    if not storage_path:
+        return
+
+    account_id = (parsed_data.get("matched_customer") or {}).get("id")
+    if not account_id:
+        log.warning("Geen account_id beschikbaar voor PDF-attach, skip")
+        return
+
+    try:
+        pdf_bytes = sb.storage.from_("order-attachments").download(storage_path)
+    except Exception as e:
+        log.warning("PDF %s ophalen uit storage mislukt: %s", storage_path, e)
+        return
+
+    try:
+        attach_pdf_to_salesorder(
+            exact=exact_client,
+            account_id=account_id,
+            salesorder_id=exact_order_id,
+            salesorder_number=order_nr,
+            filename=pdf.get("filename") or "order.pdf",
+            pdf_bytes=pdf_bytes,
+        )
+    except Exception as e:
+        log.warning("PDF-attach aan SalesOrder mislukt: %s", e)
+
 
 def is_test_sender(from_address: str | None) -> bool:
     if not from_address:
@@ -115,7 +160,8 @@ def process_pending(sb, exact_client=None, anthropic_client=None) -> dict:
             continue
 
         try:
-            payload = (row.get("parsed_data") or {}).get("salesorder_payload")
+            parsed_data = row.get("parsed_data") or {}
+            payload = parsed_data.get("salesorder_payload")
             if not payload:
                 raise ValueError("Geen salesorder_payload in parsed_data")
             resp = exact_client.post("/salesorder/SalesOrders", payload)
@@ -130,6 +176,9 @@ def process_pending(sb, exact_client=None, anthropic_client=None) -> dict:
             ).eq("id", row_id).execute()
             log.info("Order %s aangemaakt in Exact (nr %s)", row_id, order_nr)
             stats["posted"] += 1
+
+            # Attach de eerste PDF-bijlage van de mail aan de SalesOrder.
+            _attach_first_pdf(sb, exact_client, row, parsed_data, exact_id, order_nr)
         except Exception as e:
             log.exception("POST naar Exact mislukt voor %s: %s", row_id, e)
             sb.table("incoming_orders").update(

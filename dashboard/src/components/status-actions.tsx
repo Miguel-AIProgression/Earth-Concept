@@ -20,7 +20,7 @@ const ACTIONS: Record<
     confirm: "Weet je zeker dat je deze order naar Exact wilt sturen?",
     className: "bg-green-600 hover:bg-green-700 text-white",
     toStatus: "approved",
-    availableFor: ["needs_review", "ready_for_approval"],
+    availableFor: ["ready_for_approval"],
   },
   ignore: {
     label: "Negeren",
@@ -80,12 +80,19 @@ export function StatusActions({
     );
   }
 
+  const hasPayload = Boolean(row.parsed_data?.salesorder_payload);
+  const blockedReason =
+    row.parse_status === "needs_review" && !hasPayload
+      ? "Klant- of artikelmatching ontbreekt — pas de gegevens aan of laat opnieuw parsen voordat je naar Exact stuurt."
+      : null;
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2">
         {(Object.keys(ACTIONS) as ActionKey[]).map((key) => {
           const cfg = ACTIONS[key];
           if (!cfg.availableFor.includes(row.parse_status)) return null;
+          if (key === "approve" && !hasPayload) return null;
           return (
             <button
               key={key}
@@ -98,6 +105,11 @@ export function StatusActions({
           );
         })}
       </div>
+      {blockedReason && (
+        <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
+          {blockedReason}
+        </p>
+      )}
       {error && (
         <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>
       )}

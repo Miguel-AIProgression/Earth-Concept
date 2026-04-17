@@ -75,10 +75,13 @@ def _extract_attachments(msg) -> list[dict]:
     if not msg.is_multipart():
         return attachments
     for part in msg.walk():
-        if part.get_content_disposition() != "attachment":
+        if part.get_content_maintype() == "multipart":
             continue
         filename = part.get_filename()
         if not filename:
+            continue
+        disp = part.get_content_disposition()
+        if disp not in ("attachment", "inline"):
             continue
         data = part.get_payload(decode=True) or b""
         attachments.append({

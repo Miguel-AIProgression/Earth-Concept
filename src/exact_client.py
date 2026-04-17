@@ -234,6 +234,13 @@ class ExactClient:
         return all_results
 
     def post(self, endpoint, payload):
+        """POST en unwrap Exact's OData v2 `{'d': {...}}`-envelope."""
         url = f"{self.base_url}{endpoint}"
         r = self._request("POST", url, json=payload)
-        return r.json()
+        data = r.json()
+        if isinstance(data, dict):
+            inner = data.get("d", data)
+            if isinstance(inner, dict) and "results" in inner and isinstance(inner["results"], list):
+                return inner["results"]
+            return inner
+        return data

@@ -82,19 +82,16 @@ def sync_accounts(exact, sb) -> int:
 
 
 def sync_items(exact, sb) -> int:
-    """Haal alle Items op uit Exact en upsert in Supabase."""
+    """Haal alle Items op uit Exact en upsert in Supabase.
+
+    Velden beperkt tot ID/Code/Description omdat Unit/Barcode/IsSalesItem
+    niet in elke Exact-administratie hetzelfde heten. De matcher heeft
+    alleen code en description nodig.
+    """
     results = exact.get(
         "/logistics/Items",
-        params={
-            "$select": "ID,Code,Description,Unit,Barcode,IsSalesItem,IsSalesItemOnly",
-            "$filter": "IsSalesItem eq true",
-        },
-    )
-    if not results:
-        results = exact.get(
-            "/logistics/Items",
-            params={"$select": "ID,Code,Description,Unit,Barcode"},
-        )
+        params={"$select": "ID,Code,Description"},
+    ) or []
 
     rows = []
     for it in results:
@@ -107,8 +104,8 @@ def sync_items(exact, sb) -> int:
                 "code": it.get("Code"),
                 "description": desc,
                 "description_normalized": normalize_name(desc),
-                "unit": it.get("Unit"),
-                "barcode": it.get("Barcode"),
+                "unit": None,
+                "barcode": None,
                 "is_active": True,
                 "raw": it,
             }

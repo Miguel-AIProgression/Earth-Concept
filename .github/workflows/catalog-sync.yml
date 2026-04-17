@@ -1,0 +1,34 @@
+name: Exact catalog sync
+
+on:
+  schedule:
+    # Dagelijks 05:00 UTC — buiten piekuren, vóór de mail-intake-runs van overdag.
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - run: pip install -r requirements.txt
+      - name: Sync Exact accounts + items naar Supabase
+        working-directory: src
+        env:
+          EXACT_CLIENT_ID: ${{ secrets.EXACT_CLIENT_ID }}
+          EXACT_CLIENT_SECRET: ${{ secrets.EXACT_CLIENT_SECRET }}
+          EXACT_DIVISION: ${{ secrets.EXACT_DIVISION }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          ALERT_EMAIL: miguel@aiprogression.nl
+        run: python catalog_sync.py

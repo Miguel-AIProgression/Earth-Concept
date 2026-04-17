@@ -1,18 +1,11 @@
 """Bouw een SalesOrder-payload voor Exact Online, incl. klant- en artikelmatching.
 
-Deze module doet GEEN live POST naar Exact. Hij bereidt enkel het payload voor
-en laat Patrick via het review-dashboard beslissen of de order verstuurd wordt.
+Matching gebeurt tegen een lokale Supabase-katalogus (nightly gesynced door
+catalog_sync.py) met rapidfuzz en alias-leren — zie src/matcher.py.
+Deze module doet GEEN live POST naar Exact; dat gebeurt in process_pipeline.
 
 Mogelijke parse_status waarden in incoming_orders:
     pending | parsed | needs_review | ready_for_approval | approved | created | failed
-
-- pending:             mail ontvangen, nog niet geparsed
-- parsed:              AI parser klaar, data beschikbaar
-- needs_review:        handmatige controle nodig (lage confidence / missende data)
-- ready_for_approval:  payload klaar, wacht op akkoord van Patrick
-- approved:            Patrick heeft op 'verzenden' gedrukt (latere task)
-- created:             POST naar Exact SalesOrders gelukt (latere task)
-- failed:              parser/matcher error
 """
 
 from __future__ import annotations
@@ -22,103 +15,9 @@ import logging
 from datetime import datetime
 from typing import Any
 
+import matcher
+
 log = logging.getLogger(__name__)
-
-
-def _escape(value: str) -> str:
-    """Escape single quotes voor OData $filter."""
-    return value.replace("'", "''")
-
-
-def match_customer(client, customer_name: str) -> dict | None:
-    """Zoek Exact Account op basis van naam.
-
-    1) Exact match op Name.
-    2) Bij 0 of meerdere: fuzzy fallback via substringof.
-    """
-    if not customer_name:
-        return None
-
-    name_safe = _escape(customer_name)
-    exact_results = client.get(
-        "/crm/Accounts",
-        params={
-            "$filter": f"Name eq '{name_safe}'",
-            "$select": "ID,Name,Code",
-        },
-    ) or []
-
-    if len(exact_results) == 1:
-        r = exact_results[0]
-        return {"id": r.get("ID"), "name": r.get("Name"), "confidence": 1.0}
-
-    if len(exact_results) > 1:
-        r = exact_results[0]
-        return {"id": r.get("ID"), "name": r.get("Name"), "confidence": 0.8}
-
-    # Fuzzy fallback
-    fuzzy_results = client.get(
-        "/crm/Accounts",
-        params={
-            "$filter": f"substringof('{name_safe}', Name)",
-            "$select": "ID,Name,Code",
-        },
-    ) or []
-
-    if not fuzzy_results:
-        return None
-
-    best = min(fuzzy_results, key=lambda r: len(r.get("Name") or ""))
-    return {"id": best.get("ID"), "name": best.get("Name"), "confidence": 0.7}
-
-
-def match_items(client, lines: list[dict]) -> list[dict]:
-    """Match order regels naar Exact Items via code of description."""
-    results = []
-    for line in lines:
-        code = (line.get("item_code") or "").strip()
-        description = (line.get("description") or "").strip()
-
-        matched = {
-            "line": line,
-            "item_id": None,
-            "item_code": None,
-            "confidence": 0.0,
-        }
-
-        if code:
-            code_safe = _escape(code)
-            hits = client.get(
-                "/logistics/Items",
-                params={"$filter": f"Code eq '{code_safe}'", "$select": "ID,Code,Description"},
-            ) or []
-            if hits:
-                h = hits[0]
-                matched["item_id"] = h.get("ID")
-                matched["item_code"] = h.get("Code")
-                matched["confidence"] = 1.0
-                results.append(matched)
-                continue
-
-        if description:
-            words = description.split()[:3]
-            snippet = " ".join(words)
-            snippet_safe = _escape(snippet)
-            hits = client.get(
-                "/logistics/Items",
-                params={
-                    "$filter": f"substringof('{snippet_safe}', Description)",
-                    "$select": "ID,Code,Description",
-                },
-            ) or []
-            if hits:
-                h = hits[0]
-                matched["item_id"] = h.get("ID")
-                matched["item_code"] = h.get("Code")
-                matched["confidence"] = 0.6
-
-        results.append(matched)
-    return results
 
 
 def _date_to_odata(date_str: str) -> str:
@@ -183,16 +82,16 @@ def compute_overall_confidence(
 
 
 def prepare_order_for_review(incoming_row: dict, client, sb) -> dict:
-    """Match klant + items, bouw payload, schrijf terug naar incoming_orders.
+    """Match klant + items via Supabase-katalogus, bouw payload, persist.
 
-    Doet GEEN POST naar Exact.
+    ``client`` (ExactClient) is alleen nog nodig voor de uiteindelijke POST.
     """
     parsed = dict(incoming_row.get("parsed_data") or {})
     customer_name = parsed.get("customer_name") or parsed.get("customer") or ""
     lines = parsed.get("lines") or []
 
-    customer_match = match_customer(client, customer_name)
-    item_matches = match_items(client, lines)
+    customer_match = matcher.match_customer(sb, customer_name)
+    item_matches = matcher.match_items(sb, lines)
     confidence = compute_overall_confidence(customer_match, item_matches)
 
     payload = None

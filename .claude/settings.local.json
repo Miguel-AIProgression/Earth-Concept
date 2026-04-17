@@ -19,7 +19,8 @@
       "Bash(python sync_orders.py)",
       "Bash(npx next:*)",
       "mcp__claude_ai_Supabase__execute_sql",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(gh run:*)"
     ]
   }
 }

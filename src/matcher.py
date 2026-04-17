@@ -22,7 +22,7 @@ from catalog_sync import normalize_name
 log = logging.getLogger(__name__)
 
 CUSTOMER_FUZZY_THRESHOLD = 85
-ITEM_FUZZY_THRESHOLD = 80
+ITEM_FUZZY_THRESHOLD = 92
 
 
 def _fetch_accounts(sb) -> list[dict]:

@@ -115,7 +115,15 @@ def prepare_order_for_review(incoming_row: dict, client, sb) -> dict:
     if build_error:
         parsed["match_error"] = build_error
 
-    if payload is not None and confidence >= 0.9:
+    # Fuzzy item-matches zijn te riskant voor auto-gate: zelfs bij hoge
+    # WRatio-score kan het product compleet verkeerd zijn (bv. Sparkling
+    # vs. ANWB-TT). Vereis dat elk item via code of alias is gekoppeld.
+    trusted_sources = {"code", "code-prefix", "alias"}
+    all_items_trusted = bool(item_matches) and all(
+        (m.get("source") in trusted_sources) for m in item_matches
+    )
+
+    if payload is not None and confidence >= 0.9 and all_items_trusted:
         new_status = "ready_for_approval"
     else:
         new_status = "needs_review"

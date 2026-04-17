@@ -95,42 +95,47 @@ def process_pending(sb, exact_client=None, anthropic_client=None) -> dict:
                 stats["failed"] += 1
                 continue
 
-        # Stap 3: POST naar Exact -- behalve voor testafzenders
-        if status in ("ready_for_approval", "approved"):
-            if status == "ready_for_approval" and is_test_sender(from_addr):
-                log.info("Testafzender %s -> blijft in dashboard zonder POST", from_addr)
-                sb.table("incoming_orders").update(
-                    {"parse_status": "test_context"}
-                ).eq("id", row_id).execute()
-                stats["test_context"] += 1
-                continue
+        # Stap 3: POST naar Exact.
+        # Alleen expliciet 'approved' (door Patrick via dashboard) mag door.
+        # 'ready_for_approval' wacht op de goedkeur-knop -- anders zou de
+        # review-gate compleet overgeslagen worden.
+        if status != "approved":
+            continue
 
-            if exact_client is None:
-                stats["skipped"] += 1
-                continue
+        if is_test_sender(from_addr):
+            log.info("Testafzender %s -> blijft in dashboard zonder POST", from_addr)
+            sb.table("incoming_orders").update(
+                {"parse_status": "test_context"}
+            ).eq("id", row_id).execute()
+            stats["test_context"] += 1
+            continue
 
-            try:
-                payload = (row.get("parsed_data") or {}).get("salesorder_payload")
-                if not payload:
-                    raise ValueError("Geen salesorder_payload in parsed_data")
-                resp = exact_client.post("/salesorder/SalesOrders", payload)
-                exact_id = resp.get("ID") if isinstance(resp, dict) else None
-                order_nr = resp.get("OrderNumber") if isinstance(resp, dict) else None
-                sb.table("incoming_orders").update(
-                    {
-                        "parse_status": "created",
-                        "exact_order_id": exact_id,
-                        "error": None,
-                    }
-                ).eq("id", row_id).execute()
-                log.info("Order %s aangemaakt in Exact (nr %s)", row_id, order_nr)
-                stats["posted"] += 1
-            except Exception as e:
-                log.exception("POST naar Exact mislukt voor %s: %s", row_id, e)
-                sb.table("incoming_orders").update(
-                    {"parse_status": "failed", "error": f"post error: {e}"}
-                ).eq("id", row_id).execute()
-                stats["failed"] += 1
+        if exact_client is None:
+            stats["skipped"] += 1
+            continue
+
+        try:
+            payload = (row.get("parsed_data") or {}).get("salesorder_payload")
+            if not payload:
+                raise ValueError("Geen salesorder_payload in parsed_data")
+            resp = exact_client.post("/salesorder/SalesOrders", payload)
+            exact_id = resp.get("ID") if isinstance(resp, dict) else None
+            order_nr = resp.get("OrderNumber") if isinstance(resp, dict) else None
+            sb.table("incoming_orders").update(
+                {
+                    "parse_status": "created",
+                    "exact_order_id": exact_id,
+                    "error": None,
+                }
+            ).eq("id", row_id).execute()
+            log.info("Order %s aangemaakt in Exact (nr %s)", row_id, order_nr)
+            stats["posted"] += 1
+        except Exception as e:
+            log.exception("POST naar Exact mislukt voor %s: %s", row_id, e)
+            sb.table("incoming_orders").update(
+                {"parse_status": "failed", "error": f"post error: {e}"}
+            ).eq("id", row_id).execute()
+            stats["failed"] += 1
 
     log.info("Pipeline klaar: %s", stats)
     return stats

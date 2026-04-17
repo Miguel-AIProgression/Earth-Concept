@@ -105,6 +105,7 @@ def test_prepare_order_for_review_ready():
                 "item_id": "item-1",
                 "item_code": "EW-500",
                 "confidence": 1.0,
+                "source": "code",
             }
         ]
         updated = prepare_order_for_review(row, client=None, sb=sb)

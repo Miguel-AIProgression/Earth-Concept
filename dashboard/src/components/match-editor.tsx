@@ -344,7 +344,6 @@ function ItemsPicker({
 }
 
 function ItemPicker({
-  parsedDescription,
   current,
   onPick,
 }: {
@@ -352,22 +351,33 @@ function ItemPicker({
   current: MatchedItem;
   onPick: (item: ExactItem) => void;
 }) {
-  const [query, setQuery] = useState(current.item_code ? "" : parsedDescription.slice(0, 30));
+  const [query, setQuery] = useState("");
   const [results, setResults] = useState<ExactItem[]>([]);
   const [open, setOpen] = useState(false);
+  const [searching, setSearching] = useState(false);
 
   useEffect(() => {
-    if (!query || query.length < 2) {
+    const q = query.trim();
+    if (!q || q.length < 2) {
       setResults([]);
+      setSearching(false);
       return;
     }
+    setSearching(true);
     const handle = setTimeout(async () => {
-      const { data } = await supabase
+      // Splits de zoekterm; elk term moet voorkomen in code of description.
+      const terms = q.split(/\s+/).filter((t) => t.length >= 2);
+      let req = supabase
         .from("exact_items")
         .select("id,code,description,description_normalized")
-        .or(`code.ilike.%${query}%,description.ilike.%${query}%`)
-        .limit(20);
+        .limit(25);
+      for (const t of terms) {
+        req = req.or(`code.ilike.%${t}%,description.ilike.%${t}%`);
+      }
+      const { data, error } = await req;
+      if (error) console.warn("item search error:", error);
       setResults((data ?? []) as ExactItem[]);
+      setSearching(false);
     }, 200);
     return () => clearTimeout(handle);
   }, [query]);
@@ -382,8 +392,8 @@ function ItemPicker({
           </div>
           <button
             onClick={() => {
-              setQuery(parsedDescription.slice(0, 30));
-              setOpen(true);
+              setQuery("");
+              setOpen(false);
               onPick({ id: "", code: "", description: "", description_normalized: "" });
             }}
             className="text-xs text-gray-500 hover:text-gray-700"
@@ -392,34 +402,47 @@ function ItemPicker({
           </button>
         </div>
       ) : (
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setOpen(true);
-          }}
-          onFocus={() => setOpen(true)}
-          placeholder="Zoek EW-code of omschrijving…"
-          className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-      )}
-      {open && results.length > 0 && !current.item_id && (
-        <ul className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-md max-h-60 overflow-auto">
-          {results.map((it) => (
-            <li
-              key={it.id}
-              onClick={() => {
-                onPick(it);
-                setOpen(false);
-              }}
-              className="px-2 py-1.5 text-xs cursor-pointer hover:bg-blue-50"
-            >
-              <div className="font-mono text-gray-500">{it.code}</div>
-              <div className="text-gray-900">{it.description}</div>
-            </li>
-          ))}
-        </ul>
+        <>
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setOpen(true);
+            }}
+            onFocus={() => setOpen(true)}
+            onBlur={() => setTimeout(() => setOpen(false), 150)}
+            placeholder="Typ EW-code of keyword (bv. 'sparkling 33cl')…"
+            className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          {open && query.trim().length >= 2 && (
+            <ul className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-md max-h-60 overflow-auto">
+              {searching && (
+                <li className="px-2 py-1.5 text-xs text-gray-400">Zoeken…</li>
+              )}
+              {!searching && results.length === 0 && (
+                <li className="px-2 py-1.5 text-xs text-gray-400">
+                  Geen Exact-artikel gevonden voor &ldquo;{query}&rdquo;
+                </li>
+              )}
+              {!searching &&
+                results.map((it) => (
+                  <li
+                    key={it.id}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      onPick(it);
+                      setOpen(false);
+                    }}
+                    className="px-2 py-1.5 text-xs cursor-pointer hover:bg-blue-50"
+                  >
+                    <div className="font-mono text-gray-500">{it.code}</div>
+                    <div className="text-gray-900">{it.description}</div>
+                  </li>
+                ))}
+            </ul>
+          )}
+        </>
       )}
     </div>
   );

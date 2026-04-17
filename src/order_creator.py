@@ -10,7 +10,6 @@ Mogelijke parse_status waarden in incoming_orders:
 
 from __future__ import annotations
 
-import calendar
 import logging
 from datetime import datetime
 from typing import Any
@@ -21,10 +20,9 @@ log = logging.getLogger(__name__)
 
 
 def _date_to_odata(date_str: str) -> str:
-    """YYYY-MM-DD -> /Date(ms)/ formaat zoals Exact verwacht."""
+    """YYYY-MM-DD -> ISO 8601 datetime-string zoals Exact accepteert in POSTs."""
     dt = datetime.strptime(date_str, "%Y-%m-%d")
-    ms = calendar.timegm(dt.timetuple()) * 1000
-    return f"/Date({ms})/"
+    return dt.strftime("%Y-%m-%dT00:00:00")
 
 
 def build_salesorder_payload(

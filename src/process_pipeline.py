@@ -30,6 +30,27 @@ TEST_SENDERS = {"miguel@aiprogression.nl"}
 PDF_MIME_TYPES = {"application/pdf"}
 
 
+def _normalize_payload_dates(payload: dict) -> dict:
+    """Converteer legacy /Date(ms)/-velden naar ISO 8601 dat Exact accepteert.
+
+    Payloads die eerder door het dashboard zijn opgeslagen bevatten nog
+    het OData v2 response-formaat. Exact's POST-endpoint wijst dat af
+    met een DeliveryDate-parse-error.
+    """
+    import re
+    out = dict(payload)
+    for key in ("DeliveryDate", "OrderDate"):
+        v = out.get(key)
+        if isinstance(v, str):
+            m = re.match(r"^/Date\((-?\d+)\)/$", v)
+            if m:
+                from datetime import datetime, timezone
+                ms = int(m.group(1))
+                dt = datetime.fromtimestamp(ms / 1000, tz=timezone.utc)
+                out[key] = dt.strftime("%Y-%m-%dT00:00:00")
+    return out
+
+
 def _attach_first_pdf(sb, exact_client, row: dict, parsed_data: dict, exact_order_id, order_nr) -> None:
     """Probeer de eerste PDF-bijlage uit de mail aan de SalesOrder te koppelen.
 
@@ -164,6 +185,7 @@ def process_pending(sb, exact_client=None, anthropic_client=None) -> dict:
             payload = parsed_data.get("salesorder_payload")
             if not payload:
                 raise ValueError("Geen salesorder_payload in parsed_data")
+            payload = _normalize_payload_dates(payload)
             resp = exact_client.post("/salesorder/SalesOrders", payload)
             exact_id = resp.get("ID") if isinstance(resp, dict) else None
             order_nr = resp.get("OrderNumber") if isinstance(resp, dict) else None

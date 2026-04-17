@@ -43,12 +43,10 @@ def test_build_salesorder_payload_basis():
     assert line["Description"] == "Still 500ml"
 
 
-def test_build_salesorder_payload_datum_odata():
+def test_build_salesorder_payload_datum_iso():
     parsed = {"customer_reference": "X", "delivery_date": "2026-05-01"}
     payload = build_salesorder_payload(parsed, "acc", [_matched_line()])
-    import calendar
-    expected_ms = calendar.timegm(datetime(2026, 5, 1).timetuple()) * 1000
-    assert payload["DeliveryDate"] == f"/Date({expected_ms})/"
+    assert payload["DeliveryDate"] == "2026-05-01T00:00:00"
 
 
 def test_build_salesorder_payload_zonder_datum():

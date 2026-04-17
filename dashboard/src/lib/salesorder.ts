@@ -1,9 +1,8 @@
 import { ParsedData, MatchedCustomer, MatchedItem } from "./supabase";
 
-/** YYYY-MM-DD -> /Date(ms)/ zoals Exact verwacht. */
+/** YYYY-MM-DD -> ISO 8601 datetime zoals Exact in POST-payload accepteert. */
 export function dateToODataMs(dateStr: string): string {
-  const d = new Date(dateStr + "T00:00:00Z");
-  return `/Date(${d.getTime()})/`;
+  return `${dateStr}T00:00:00`;
 }
 
 export function formatDeliveryAddress(

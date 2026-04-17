@@ -25,6 +25,16 @@ CUSTOMER_FUZZY_THRESHOLD = 85
 ITEM_FUZZY_THRESHOLD = 92
 
 
+def _normalize_item_code(code: str | None) -> str:
+    """Strip EW-prefix + whitespace zodat 72316 matcht op EW72316."""
+    if not code:
+        return ""
+    c = code.strip().upper()
+    if c.startswith("EW"):
+        c = c[2:]
+    return c.lstrip("0")
+
+
 def _fetch_accounts(sb) -> list[dict]:
     res = sb.table("exact_accounts").select("id,code,name,name_normalized,email").execute()
     return res.data or []
@@ -123,10 +133,12 @@ def match_item(sb, line: dict, items_cache: list[dict] | None = None) -> dict:
     if not items:
         return result
 
-    # 1. Exact code match
+    # 1. Exact code match — mét EW-prefix-normalisatie zodat
+    #    '72316' matcht op 'EW72316' en vice versa.
     if code:
+        target = _normalize_item_code(code)
         for it in items:
-            if (it.get("code") or "").strip() == code:
+            if _normalize_item_code(it.get("code")) == target:
                 result.update(
                     {
                         "item_id": it["id"],
@@ -139,13 +151,14 @@ def match_item(sb, line: dict, items_cache: list[dict] | None = None) -> dict:
 
     # 2. Code-prefix (klant stuurt EW9208, Exact heeft EW9208-NL)
     if code:
+        target = _normalize_item_code(code)
         for it in items:
-            it_code = (it.get("code") or "").strip()
-            if it_code and (it_code.startswith(code) or code.startswith(it_code)):
+            it_norm = _normalize_item_code(it.get("code"))
+            if target and it_norm and (it_norm.startswith(target) or target.startswith(it_norm)):
                 result.update(
                     {
                         "item_id": it["id"],
-                        "item_code": it_code,
+                        "item_code": it.get("code"),
                         "confidence": 0.9,
                         "source": "code-prefix",
                     }

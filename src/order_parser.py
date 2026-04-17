@@ -25,7 +25,7 @@ OUTPUT_SCHEMA_DOC = """
   "lines": [
     {
       "description": "string — productomschrijving zoals in de order",
-      "item_code": "string|null — artikelcode als vermeld",
+      "item_code": "string|null — Earth Water artikelcode (zie instructies)",
       "quantity": "number — aantal eenheden",
       "unit": "string|null — doos/case/fles/pallet",
       "unit_price": "number|null — prijs per eenheid exclusief BTW"
@@ -48,6 +48,14 @@ Instructies:
 - Gebruik YYYY-MM-DD voor datums.
 - Ga uit van EUR en BTW-exclusief tenzij anders vermeld.
 - Confidence 0.9+ als alles duidelijk en compleet is; 0.7-0.9 bij kleine twijfel; <0.7 bij ontbrekende kritieke velden.
+
+ARTIKELCODE-REGELS (kritisch):
+- Earth Water-codes beginnen typisch met 'EW' (bv. EW72316) of zijn numeriek (bv. 72316, 9005, 9100). Deze horen in 'item_code'.
+- Klanten gebruiken in hun PO's vaak twee code-kolommen: een met hun eigen SKU en een met de leverancierscode. Kies ALTIJD de leverancierscode (= Earth Water).
+- Voorkeurskolomnamen voor item_code: 'Uw Artikelnr.', 'Uw ref', 'Art. Nr.', 'Leveranciersnummer', 'EAN/SKU leverancier', 'Supplier code'.
+- NOOIT gebruiken voor item_code: 'Ons Nr.', 'Onze Artikelnr.', 'Interne SKU', 'Onze code', 'Klant-artikelnr.'.
+- Als er twijfel is of geen expliciete kolomnaam, verkies een code die begint met 'EW' of die numeriek 4-5 cijfers is (typische EW-reeks), en geef de andere in 'notes' als context.
+- Regels met quantity 0 of leeg horen NIET in de output (template-prijslijsten).
 """
 
 _DEFAULTS: dict[str, Any] = {

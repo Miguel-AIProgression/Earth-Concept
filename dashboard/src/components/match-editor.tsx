@@ -32,7 +32,16 @@ type Props = {
 
 export function MatchEditor({ row, onUpdated }: Props) {
   const parsed = row.parsed_data;
-  const parsedLines: ParsedLine[] = useMemo(() => parsed?.lines ?? [], [parsed]);
+  // Template-bestellijsten (Archeon, Horeca e.d.) hebben tientallen regels
+  // met quantity 0 voor niet-bestelde producten; filter die weg.
+  const parsedLines: ParsedLine[] = useMemo(
+    () =>
+      (parsed?.lines ?? []).filter((l) => {
+        const q = l.quantity;
+        return typeof q === "number" && q > 0;
+      }),
+    [parsed]
+  );
 
   const [customer, setCustomer] = useState<MatchedCustomer | null>(
     parsed?.matched_customer ?? null

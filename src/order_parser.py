@@ -90,6 +90,19 @@ def _apply_defaults(data: dict) -> dict:
         result["lines"] = []
     if "confidence" not in data:
         result["confidence"] = 0.0
+
+    # Template-bestellijsten (zoals Archeon) hebben alle producten als
+    # regel met quantity=0 voor niet-bestelde items. Filter die weg zodat
+    # matching + payload alleen de echt bestelde regels ziet.
+    filtered_lines = []
+    for line in result["lines"]:
+        qty = line.get("quantity")
+        try:
+            if qty is not None and float(qty) > 0:
+                filtered_lines.append(line)
+        except (TypeError, ValueError):
+            continue
+    result["lines"] = filtered_lines
     return result
 
 

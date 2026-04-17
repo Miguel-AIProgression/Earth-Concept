@@ -2,8 +2,12 @@ name: Mail intake + pipeline
 
 on:
   schedule:
-    # Elke 5 minuten: mails ophalen, parsen, matchen en POST naar Exact
+    # Elke 5 minuten: mails ophalen, parsen, matchen en POST naar Exact.
+    # GitHub skipt scheduled runs bij drukte, dus parallel triggert
+    # cron-job.org de workflow via repository_dispatch (event: mail-intake).
     - cron: "*/5 * * * *"
+  repository_dispatch:
+    types: [mail-intake]
   workflow_dispatch:
 
 concurrency:

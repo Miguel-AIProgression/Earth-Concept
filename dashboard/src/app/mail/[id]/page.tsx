@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/auth";
 import { LoginForm } from "@/components/login-form";
 import { IntakeStatusBadge } from "@/components/intake-status-badge";
 import { StatusActions } from "@/components/status-actions";
+import { MatchEditor } from "@/components/match-editor";
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
@@ -141,6 +142,13 @@ export default function MailDetailPage() {
             ))}
           </ul>
         </div>
+      )}
+
+      {parsed && row.parse_status !== "created" && (
+        <MatchEditor
+          row={row}
+          onUpdated={(patch) => setRow((r) => (r ? { ...r, ...patch } : r))}
+        />
       )}
 
       {parsed && (

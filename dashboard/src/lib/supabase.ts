@@ -72,3 +72,34 @@ export type IncomingOrder = {
   created_at: string;
 };
 
+export type ExactAccount = {
+  id: string;
+  code: string | null;
+  name: string;
+  name_normalized: string;
+  email: string | null;
+};
+
+export type ExactItem = {
+  id: string;
+  code: string | null;
+  description: string;
+  description_normalized: string;
+};
+
+export type MatchedCustomer = {
+  id: string;
+  name: string;
+  confidence: number;
+  source?: string;
+};
+
+export type MatchedItem = {
+  line: ParsedLine;
+  item_id: string | null;
+  item_code: string | null;
+  confidence: number;
+  source?: string;
+  item_description?: string | null;
+};
+

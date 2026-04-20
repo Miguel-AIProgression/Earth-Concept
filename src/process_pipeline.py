@@ -225,12 +225,18 @@ def run() -> dict:
     from exact_client import ExactClient
     exact_client = ExactClient()
 
-    # Stap 1: mails ophalen
-    from mail_intake import process_inbox
-    intake_stats = process_inbox(sb=sb)
-    log.info("Mail intake: %s", intake_stats)
+    # Stap 1: mails ophalen. Fouten hier mogen stap 2 niet blokkeren;
+    # anders blijven goedgekeurde orders hangen als IMAP tijdelijk hapert.
+    intake_stats: dict[str, Any] = {}
+    try:
+        from mail_intake import process_inbox
+        intake_stats = process_inbox(sb=sb)
+        log.info("Mail intake: %s", intake_stats)
+    except Exception as e:
+        log.exception("Mail intake faalde, ga door met pipeline: %s", e)
+        intake_stats = {"error": str(e)}
 
-    # Stap 2: verwerken
+    # Stap 2: verwerken (inclusief POST naar Exact voor 'approved' rijen).
     pipeline_stats = process_pending(sb, exact_client=exact_client)
 
     return {"intake": intake_stats, "pipeline": pipeline_stats}

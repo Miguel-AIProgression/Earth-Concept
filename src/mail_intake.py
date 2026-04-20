@@ -3,6 +3,10 @@
 Poller die de orders@earthwater.nl mailbox uitleest via IMAP (app-password),
 nieuwe mails opslaat in Supabase en bijlagen uploadt naar storage bucket
 `order-attachments`. Parsing van de order-inhoud gebeurt in een latere stap.
+
+We filteren op SINCE (laatste N dagen), niet op UNSEEN: anders komen mails
+die Patrick al in Gmail heeft geopend nooit in het portaal. Dedup gebeurt
+op Message-ID via `message_already_seen()`.
 """
 
 from __future__ import annotations
@@ -13,6 +17,7 @@ import imaplib
 import logging
 import os
 import re
+from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from typing import Optional
 
@@ -23,6 +28,10 @@ log = logging.getLogger(__name__)
 IMAP_HOST = os.getenv("MAIL_HOST", "imap.gmail.com")
 IMAP_PORT = int(os.getenv("MAIL_PORT", "993"))
 BUCKET = "order-attachments"
+# Lookback-venster voor de IMAP SEARCH. We filteren bewust niet op UNSEEN,
+# omdat mails die Patrick al in Gmail heeft geopend dan nooit in het portaal
+# komen. Dedup gebeurt verderop via message_already_seen().
+DEFAULT_LOOKBACK_DAYS = int(os.getenv("MAIL_LOOKBACK_DAYS", "14"))
 
 
 def connect_imap() -> imaplib.IMAP4_SSL:
@@ -120,8 +129,19 @@ def _parse_raw(raw: bytes) -> dict:
     }
 
 
-def fetch_unseen_messages(imap: imaplib.IMAP4_SSL) -> list[dict]:
-    status, data = imap.search(None, "UNSEEN")
+def fetch_recent_messages(
+    imap: imaplib.IMAP4_SSL, lookback_days: int | None = None
+) -> list[dict]:
+    """Haal mails op uit de laatste N dagen, ongeacht Seen-flag.
+
+    We gebruiken SINCE in plaats van UNSEEN omdat Patrick mails soms
+    al in Gmail opent voordat de pipeline ze ophaalt; UNSEEN zou die
+    dan voorgoed overslaan. Dedup loopt via message_already_seen().
+    BODY.PEEK[] laat het Seen-vlag ongemoeid tijdens het ophalen.
+    """
+    days = lookback_days if lookback_days is not None else DEFAULT_LOOKBACK_DAYS
+    since_date = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%d-%b-%Y")
+    status, data = imap.search(None, "SINCE", since_date)
     if status != "OK" or not data or not data[0]:
         return []
     ids = data[0].split()
@@ -215,7 +235,7 @@ def process_inbox(sb=None, imap=None, mark_read: bool = True) -> dict:
         sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_KEY"])
 
     try:
-        messages = fetch_unseen_messages(imap)
+        messages = fetch_recent_messages(imap)
         stats["fetched"] = len(messages)
         for msg in messages:
             try:

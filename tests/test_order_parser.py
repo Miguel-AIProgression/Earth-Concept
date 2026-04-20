@@ -123,3 +123,92 @@ def test_pdf_download_uit_storage():
     parse_incoming_order(row, sb, client=client)
     sb.storage.from_.assert_called_with("order-attachments")
     sb.storage.from_.return_value.download.assert_called_with("abc/file.pdf")
+
+
+def test_pdf_tussen_inline_images_wordt_geselecteerd():
+    """Doorgestuurde mails hebben vaak signature-logo als attachments[0]."""
+    client = _mock_client(FULL_REPLY)
+    sb = MagicMock()
+    sb.storage.from_.return_value.download.return_value = b"%PDF-fake-bytes"
+    row = {
+        "id": "abc",
+        "body_text": "Fwd bestelling",
+        "body_html": None,
+        "attachments": [
+            {"storage_path": "abc/logo.png", "filename": "logo.png", "content_type": "image/png"},
+            {"storage_path": "abc/tracking.gif", "filename": "tracking.gif", "content_type": "image/gif"},
+            {"storage_path": "abc/order.pdf", "filename": "order.pdf", "content_type": "application/pdf"},
+        ],
+    }
+    parse_incoming_order(row, sb, client=client)
+    sb.storage.from_.return_value.download.assert_called_with("abc/order.pdf")
+
+
+def test_bijlage_zonder_pdf_magic_bytes_valt_terug():
+    """.msg/.eml-bestanden met content_type application/pdf moeten niet
+    als PDF naar Claude gaan."""
+    client = _mock_client(FULL_REPLY)
+    sb = MagicMock()
+    sb.storage.from_.return_value.download.return_value = b"not a pdf at all"
+    row = {
+        "id": "abc",
+        "body_text": "Bestelling in mailtekst",
+        "body_html": None,
+        "attachments": [
+            {"storage_path": "abc/fake.pdf", "filename": "fake.pdf", "content_type": "application/pdf"},
+        ],
+    }
+    result = parse_incoming_order(row, sb, client=client)
+    assert result["parse_status"] == "parsed"
+    # Claude mag niet met PDF-bytes aangeroepen zijn
+    call_args = client.messages.create.call_args
+    messages = call_args.kwargs["messages"]
+    blocks = messages[0]["content"]
+    assert not any(b.get("type") == "document" for b in blocks)
+
+
+def test_claude_weigert_pdf_retry_zonder_pdf():
+    """Als Claude een magic-byte-geldige PDF alsnog weigert, valt parser
+    terug op mail-tekst zodat de rij niet onnodig op failed komt."""
+    sb = MagicMock()
+    sb.storage.from_.return_value.download.return_value = b"%PDF-1.4 broken"
+    client = MagicMock()
+
+    good_response = MagicMock()
+    good_block = MagicMock()
+    good_block.text = json.dumps(FULL_REPLY)
+    good_response.content = [good_block]
+
+    client.messages.create.side_effect = [
+        Exception("Error code: 400 - invalid_request_error: The PDF specified was not valid."),
+        good_response,
+    ]
+
+    row = {
+        "id": "abc",
+        "body_text": "Fwd bestelling",
+        "body_html": None,
+        "attachments": [
+            {"storage_path": "abc/order.pdf", "filename": "order.pdf", "content_type": "application/pdf"},
+        ],
+    }
+    result = parse_incoming_order(row, sb, client=client)
+    assert result["parse_status"] == "parsed"
+    assert client.messages.create.call_count == 2
+
+
+def test_geen_pdf_bijlage_valt_terug_op_tekst():
+    """Mail met alleen inline-images moet zonder PDF door de parser kunnen."""
+    client = _mock_client(FULL_REPLY)
+    sb = MagicMock()
+    row = {
+        "id": "abc",
+        "body_text": "Bestelling in mailtekst",
+        "body_html": None,
+        "attachments": [
+            {"storage_path": "abc/logo.png", "filename": "logo.png", "content_type": "image/png"},
+        ],
+    }
+    result = parse_incoming_order(row, sb, client=client)
+    sb.storage.from_.return_value.download.assert_not_called()
+    assert result["parse_status"] == "parsed"

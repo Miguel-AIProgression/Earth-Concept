@@ -181,23 +181,55 @@ def parse_incoming_order(row: dict, sb, client=None) -> dict:
     """
     pdf_bytes = None
     attachments = row.get("attachments") or []
-    if attachments:
-        first = attachments[0]
-        storage_path = first.get("storage_path") if isinstance(first, dict) else None
+    # Doorgestuurde mails bevatten vaak meerdere inline-bijlagen (signature-logo,
+    # tracking-pixel, e.d.). Pak alleen een echte PDF, anders stuurt Claude
+    # plaatje-bytes als application/pdf en klapt de parse.
+    pdf_att = next(
+        (
+            a for a in attachments
+            if isinstance(a, dict)
+            and (
+                (a.get("content_type") or "").lower() == "application/pdf"
+                or (a.get("filename") or "").lower().endswith(".pdf")
+            )
+        ),
+        None,
+    )
+    if pdf_att:
+        storage_path = pdf_att.get("storage_path")
         if storage_path:
             try:
                 pdf_bytes = sb.storage.from_("order-attachments").download(storage_path)
             except Exception:
                 pdf_bytes = None
 
-    update: dict[str, Any] = {}
-    try:
-        parsed = parse_order(
+    # Magic-byte check: sommige mails leveren `.msg` of `.eml` aan als
+    # application/pdf, of versturen een beschadigde/encrypted PDF. Claude
+    # weigert die met "The PDF specified was not valid"; parse dan op
+    # alleen mail-tekst zodat de rij niet onnodig op 'failed' komt.
+    if pdf_bytes and not pdf_bytes[:5] == b"%PDF-":
+        pdf_bytes = None
+
+    def _run(pdf):
+        return parse_order(
             body_text=row.get("body_text"),
             body_html=row.get("body_html"),
-            pdf_bytes=pdf_bytes,
+            pdf_bytes=pdf,
             client=client,
         )
+
+    update: dict[str, Any] = {}
+    try:
+        try:
+            parsed = _run(pdf_bytes)
+        except Exception as e:
+            # Claude kan een magic-byte-geldige PDF alsnog weigeren
+            # (encrypted, unsupported version). Retry zonder PDF zodat de
+            # mail-tekst nog wel geparsed wordt.
+            if pdf_bytes and "PDF" in str(e):
+                parsed = _run(None)
+            else:
+                raise
         confidence = parsed.get("confidence") or 0.0
         status = "parsed" if confidence >= 0.7 else "needs_review"
         update = {

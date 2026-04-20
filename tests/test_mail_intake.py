@@ -94,3 +94,33 @@ def test_geen_message_id_gebruikt_hash():
     mid = parsed["message_id"]
     assert len(mid) == 64
     assert all(c in "0123456789abcdef" for c in mid)
+
+
+def test_fetch_gebruikt_since_niet_unseen():
+    """Regressie: UNSEEN sloeg mails over die Patrick al in Gmail had geopend."""
+    imap = MagicMock()
+    imap.search.return_value = ("OK", [b""])
+    mail_intake.fetch_recent_messages(imap, lookback_days=7)
+    assert imap.search.called
+    args = imap.search.call_args.args
+    assert "UNSEEN" not in args
+    assert "SINCE" in args
+
+
+def test_reeds_geopende_mail_wordt_alsnog_opgehaald():
+    """Mails met Seen-flag moeten via SINCE nog steeds door de intake komen."""
+    sb = MagicMock()
+    sb.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value.data = []
+
+    imap = MagicMock()
+    raw = _build_raw_email(message_id="<reeds-gelezen@voorbeeld.nl>")
+    imap.search.return_value = ("OK", [b"42"])
+    imap.fetch.return_value = ("OK", [(b"42 (BODY[] {x}", raw)])
+
+    with patch.object(mail_intake, "save_message", return_value={"id": "new-id"}) as save_mock, \
+         patch.object(mail_intake, "upload_attachments", return_value=[]), \
+         patch.object(mail_intake, "mark_as_read"):
+        stats = mail_intake.process_inbox(sb=sb, imap=imap, mark_read=True)
+
+    assert save_mock.call_count == 1
+    assert stats["new"] == 1

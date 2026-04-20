@@ -123,3 +123,39 @@ def test_pdf_download_uit_storage():
     parse_incoming_order(row, sb, client=client)
     sb.storage.from_.assert_called_with("order-attachments")
     sb.storage.from_.return_value.download.assert_called_with("abc/file.pdf")
+
+
+def test_pdf_tussen_inline_images_wordt_geselecteerd():
+    """Doorgestuurde mails hebben vaak signature-logo als attachments[0]."""
+    client = _mock_client(FULL_REPLY)
+    sb = MagicMock()
+    sb.storage.from_.return_value.download.return_value = b"%PDF-fake-bytes"
+    row = {
+        "id": "abc",
+        "body_text": "Fwd bestelling",
+        "body_html": None,
+        "attachments": [
+            {"storage_path": "abc/logo.png", "filename": "logo.png", "content_type": "image/png"},
+            {"storage_path": "abc/tracking.gif", "filename": "tracking.gif", "content_type": "image/gif"},
+            {"storage_path": "abc/order.pdf", "filename": "order.pdf", "content_type": "application/pdf"},
+        ],
+    }
+    parse_incoming_order(row, sb, client=client)
+    sb.storage.from_.return_value.download.assert_called_with("abc/order.pdf")
+
+
+def test_geen_pdf_bijlage_valt_terug_op_tekst():
+    """Mail met alleen inline-images moet zonder PDF door de parser kunnen."""
+    client = _mock_client(FULL_REPLY)
+    sb = MagicMock()
+    row = {
+        "id": "abc",
+        "body_text": "Bestelling in mailtekst",
+        "body_html": None,
+        "attachments": [
+            {"storage_path": "abc/logo.png", "filename": "logo.png", "content_type": "image/png"},
+        ],
+    }
+    result = parse_incoming_order(row, sb, client=client)
+    sb.storage.from_.return_value.download.assert_not_called()
+    assert result["parse_status"] == "parsed"

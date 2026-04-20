@@ -181,9 +181,22 @@ def parse_incoming_order(row: dict, sb, client=None) -> dict:
     """
     pdf_bytes = None
     attachments = row.get("attachments") or []
-    if attachments:
-        first = attachments[0]
-        storage_path = first.get("storage_path") if isinstance(first, dict) else None
+    # Doorgestuurde mails bevatten vaak meerdere inline-bijlagen (signature-logo,
+    # tracking-pixel, e.d.). Pak alleen een echte PDF, anders stuurt Claude
+    # plaatje-bytes als application/pdf en klapt de parse.
+    pdf_att = next(
+        (
+            a for a in attachments
+            if isinstance(a, dict)
+            and (
+                (a.get("content_type") or "").lower() == "application/pdf"
+                or (a.get("filename") or "").lower().endswith(".pdf")
+            )
+        ),
+        None,
+    )
+    if pdf_att:
+        storage_path = pdf_att.get("storage_path")
         if storage_path:
             try:
                 pdf_bytes = sb.storage.from_("order-attachments").download(storage_path)

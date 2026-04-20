@@ -6,6 +6,15 @@ on:
     # GitHub skipt scheduled runs bij drukte, dus parallel triggert
     # cron-job.org de workflow via repository_dispatch (event: mail-intake).
     - cron: "*/5 * * * *"
+  push:
+    # Elke merge naar main moet direct een run starten zodat een fix
+    # niet hoeft te wachten op de volgende cron-tick (en scheduled runs
+    # die GitHub mogelijk overslaat).
+    branches: [main]
+    paths:
+      - "src/**"
+      - "requirements.txt"
+      - ".github/workflows/mail-intake.yml"
   repository_dispatch:
     types: [mail-intake]
   workflow_dispatch:

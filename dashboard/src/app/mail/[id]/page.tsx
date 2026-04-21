@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { supabase, IncomingOrder } from "@/lib/supabase";
+import { supabase, IncomingOrder, SentEmail } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import { LoginForm } from "@/components/login-form";
 import { IntakeStatusBadge } from "@/components/intake-status-badge";
@@ -19,6 +19,7 @@ export default function MailDetailPage() {
   const { user, session, loading: authLoading } = useAuth();
   const { id } = useParams<{ id: string }>();
   const [row, setRow] = useState<IncomingOrder | null>(null);
+  const [sentEmails, setSentEmails] = useState<SentEmail[]>([]);
   const [loading, setLoading] = useState(true);
   const [attachmentUrls, setAttachmentUrls] = useState<Record<string, string>>({});
   const [showHtml, setShowHtml] = useState(false);
@@ -44,6 +45,18 @@ export default function MailDetailPage() {
     if (!session) return;
     fetchRow();
   }, [session, fetchRow]);
+
+  useEffect(() => {
+    if (!session || !id) return;
+    (async () => {
+      const { data } = await supabase
+        .from("sent_emails")
+        .select("*")
+        .eq("incoming_order_id", id)
+        .order("sent_at", { ascending: false });
+      setSentEmails((data as SentEmail[]) || []);
+    })();
+  }, [session, id, row?.auto_reply_sent_at, row?.confirmation_sent_at]);
 
   useEffect(() => {
     if (!row?.attachments?.length) return;
@@ -143,6 +156,39 @@ export default function MailDetailPage() {
                 ) : (
                   <span className="text-gray-400 text-xs">Link aan het ophalen…</span>
                 )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {sentEmails.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-xl p-6">
+          <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-3">
+            Verzonden mails
+          </h2>
+          <ul className="space-y-4">
+            {sentEmails.map((e) => (
+              <li key={e.id} className="border border-gray-100 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span
+                    className={
+                      e.type === "confirmation"
+                        ? "text-xs font-medium px-2 py-0.5 rounded bg-green-50 text-green-700"
+                        : "text-xs font-medium px-2 py-0.5 rounded bg-blue-50 text-blue-700"
+                    }
+                  >
+                    {e.type === "confirmation" ? "Bevestiging" : "Autoreply"}
+                  </span>
+                  <span className="text-xs text-gray-500">{formatDate(e.sent_at)}</span>
+                </div>
+                <p className="text-sm text-gray-500">
+                  Aan <span className="text-gray-800">{e.to_address}</span>
+                </p>
+                <p className="text-sm font-medium text-gray-900 mt-1">{e.subject}</p>
+                <pre className="text-xs text-gray-700 mt-3 whitespace-pre-wrap break-words bg-gray-50 p-3 rounded border border-gray-100">
+                  {e.body}
+                </pre>
               </li>
             ))}
           </ul>

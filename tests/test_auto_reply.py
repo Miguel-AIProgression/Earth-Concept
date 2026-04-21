@@ -267,7 +267,7 @@ def test_maybe_send_skipt_als_al_verstuurd():
 def test_maybe_send_stuurt_en_update_supabase():
     row = {
         "id": "r1",
-        "from_address": "p@x.nl",
+        "from_address": "Patrick <patrick@earthwater.nl>",
         "subject": "Fwd: X",
         "message_id": "<abc@x.nl>",
         "parse_status": "failed",
@@ -297,7 +297,7 @@ def test_maybe_send_stuurt_en_update_supabase():
 def test_maybe_send_geen_problemen_geen_reply():
     row = {
         "id": "r1",
-        "from_address": "p@x.nl",
+        "from_address": "Patrick <patrick@earthwater.nl>",
         "parse_status": "needs_review",
         "parsed_data": {
             "customer_name": "X",
@@ -339,3 +339,172 @@ def test_smtp_config_geen_credentials_retourneert_none(monkeypatch):
               "MAIL_HOST", "MAIL_USER", "MAIL_PASS"):
         monkeypatch.delenv(k, raising=False)
     assert auto_reply._smtp_config() is None
+
+
+# ---------- Forwarder-filter ----------
+
+
+def test_is_from_forwarder_intern_domein(monkeypatch):
+    """Elke @earthwater.nl-afzender is OK: Patrick, Thomas, info, etc."""
+    monkeypatch.delenv("FORWARD_SENDER_ALLOWLIST", raising=False)
+    monkeypatch.delenv("FORWARD_SENDER_DOMAIN", raising=False)
+    assert auto_reply._is_from_forwarder("Patrick De Nekker <patrick@earthwater.nl>")
+    assert auto_reply._is_from_forwarder("Thomas Van Amerom <thomas@earthwater.nl>")
+    assert auto_reply._is_from_forwarder("info earthwater <info@earthwater.nl>")
+
+
+def test_is_from_forwarder_reject_externe_afzender(monkeypatch):
+    """Adressen buiten @earthwater.nl mogen nooit een auto-reply krijgen."""
+    monkeypatch.delenv("FORWARD_SENDER_ALLOWLIST", raising=False)
+    monkeypatch.delenv("FORWARD_SENDER_DOMAIN", raising=False)
+    assert not auto_reply._is_from_forwarder("iemand@klant.nl")
+    assert not auto_reply._is_from_forwarder("spoof@earthwater.nl.evil.com")
+    assert not auto_reply._is_from_forwarder("")
+    assert not auto_reply._is_from_forwarder(None)
+
+
+def test_send_auto_reply_logt_naar_sent_emails():
+    """Na een succesvolle send wordt een rij in sent_emails opgeslagen."""
+    sb = MagicMock()
+    inserted = {}
+
+    def fake_insert(data):
+        inserted["data"] = data
+        m = MagicMock()
+        m.execute.return_value = MagicMock(data=[data])
+        return m
+
+    sb.table.return_value.insert.side_effect = fake_insert
+
+    row = {
+        "id": "row-uuid",
+        "from_address": "patrick@earthwater.nl",
+        "subject": "Fwd: X",
+        "message_id": "<abc@x.nl>",
+        "parsed_data": {"customer_name": "Y"},
+    }
+    d = auto_reply.Diagnosis(no_lines=True)
+    ok = auto_reply.send_auto_reply(row, d, smtp_sender=lambda m: None, sb=sb)
+    assert ok is True
+    assert inserted["data"]["type"] == "auto_reply"
+    assert inserted["data"]["incoming_order_id"] == "row-uuid"
+    assert inserted["data"]["to_address"] == "patrick@earthwater.nl"
+    assert "Re:" in inserted["data"]["subject"]
+    assert "Hoi Patrick" in inserted["data"]["body"]
+    assert inserted["data"]["in_reply_to"] == "<abc@x.nl>"
+
+
+def test_is_from_forwarder_allowlist_override(monkeypatch):
+    """Expliciete FORWARD_SENDER_ALLOWLIST beperkt tot specifieke adressen."""
+    monkeypatch.setenv("FORWARD_SENDER_ALLOWLIST", "patrick@earthwater.nl")
+    assert auto_reply._is_from_forwarder("patrick@earthwater.nl")
+    assert not auto_reply._is_from_forwarder("thomas@earthwater.nl")
+
+
+def test_maybe_send_auto_reply_skipt_niet_forwarder():
+    row = {
+        "id": "r1",
+        "from_address": "klant@extern.nl",
+        "parse_status": "failed",
+        "error": "boom",
+        "parsed_data": None,
+        "auto_reply_sent_at": None,
+    }
+    sb = MagicMock()
+    sent = {"n": 0}
+    res = auto_reply.maybe_send_auto_reply(
+        row, sb, smtp_sender=lambda m: sent.__setitem__("n", sent["n"] + 1)
+    )
+    assert res["skipped_not_forwarder"] is True
+    assert res["sent"] is False
+    assert sent["n"] == 0
+
+
+# ---------- Confirmation ----------
+
+
+def test_build_confirmation_bevat_alle_velden():
+    row = {
+        "subject": "Fwd: Bestelling X",
+        "message_id": "<origineel@x.nl>",
+        "exact_order_id": "ABC-123",
+        "parsed_data": {
+            "matched_customer": {"id": "a1", "name": "Park Inn Leuven", "confidence": 0.9, "source": "fuzzy"},
+            "customer_reference": "PO-99",
+            "delivery_date": "2026-05-22",
+            "lines": [
+                {"quantity": 84, "item_code": "EW9208", "description": "TT 50cl"},
+            ],
+        },
+    }
+    subject, body = auto_reply.build_confirmation(row)
+    assert subject == "Re: Fwd: Bestelling X"
+    assert "Park Inn Leuven" in body
+    assert "PO-99" in body
+    assert "2026-05-22" in body
+    assert "ABC-123" in body
+    assert "84" in body
+    assert "EW9208" in body
+
+
+def test_send_confirmation_threadt_op_message_id():
+    sent = {}
+
+    def sender(msg):
+        sent["msg"] = msg
+
+    row = {
+        "id": "r1",
+        "from_address": "Patrick <patrick@earthwater.nl>",
+        "subject": "Fwd: X",
+        "message_id": "<abc@x.nl>",
+        "exact_order_id": "NR1",
+        "parsed_data": {"matched_customer": {"name": "Y"}, "lines": []},
+    }
+    ok = auto_reply.send_confirmation(row, smtp_sender=sender)
+    assert ok is True
+    assert sent["msg"]["In-Reply-To"] == "<abc@x.nl>"
+    assert sent["msg"]["References"] == "<abc@x.nl>"
+    assert sent["msg"]["Subject"].startswith("Re:")
+
+
+def test_maybe_send_confirmation_alleen_bij_created_en_forwarder():
+    sb = MagicMock()
+
+    # Scenario 1: al verstuurd -> skip
+    row = {"id": "r1", "from_address": "patrick@earthwater.nl",
+           "exact_order_id": "X", "confirmation_sent_at": "2026-04-21T10:00:00Z",
+           "parsed_data": {}}
+    res = auto_reply.maybe_send_confirmation(row, sb, smtp_sender=lambda m: None)
+    assert res["skipped_already_sent"] is True
+
+    # Scenario 2: niet forwarder -> skip
+    row = {"id": "r2", "from_address": "iemand@klant.nl",
+           "exact_order_id": "X", "confirmation_sent_at": None, "parsed_data": {}}
+    res = auto_reply.maybe_send_confirmation(row, sb, smtp_sender=lambda m: None)
+    assert res["skipped_not_forwarder"] is True
+
+    # Scenario 3: verkeerde parse_status -> skip
+    row = {"id": "r3", "from_address": "patrick@earthwater.nl",
+           "parse_status": "needs_review", "exact_order_id": None,
+           "confirmation_sent_at": None, "parsed_data": {}}
+    res = auto_reply.maybe_send_confirmation(row, sb, smtp_sender=lambda m: None)
+    assert res["skipped_wrong_status"] is True
+
+    # Scenario 4: alles OK -> wordt verstuurd en Supabase wordt geüpdatet
+    captured = {}
+    row = {
+        "id": "r4",
+        "from_address": "Patrick <patrick@earthwater.nl>",
+        "subject": "Fwd: X",
+        "message_id": "<a@b>",
+        "parse_status": "created",
+        "exact_order_id": "NR1",
+        "confirmation_sent_at": None,
+        "parsed_data": {"matched_customer": {"name": "K"}, "lines": []},
+    }
+    res = auto_reply.maybe_send_confirmation(
+        row, sb, smtp_sender=lambda m: captured.setdefault("msg", m)
+    )
+    assert res["sent"] is True
+    assert "msg" in captured

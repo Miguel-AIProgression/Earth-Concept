@@ -69,7 +69,20 @@ export type IncomingOrder = {
   parsed_data: ParsedData | null;
   exact_order_id: string | null;
   error: string | null;
+  auto_reply_sent_at: string | null;
+  confirmation_sent_at: string | null;
   created_at: string;
+};
+
+export type SentEmail = {
+  id: string;
+  incoming_order_id: string;
+  type: "auto_reply" | "confirmation";
+  to_address: string;
+  subject: string;
+  body: string;
+  in_reply_to: string | null;
+  sent_at: string;
 };
 
 export type ExactAccount = {

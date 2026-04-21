@@ -84,6 +84,21 @@ def test_match_customer_dubbele_exacte_normalisatie_is_ambiguous():
     assert res["source"] == "exact_ambiguous"
 
 
+def test_match_customer_fuzzy_rejects_sparse_overlap():
+    """Korte kandidaten met maar 1 gedeelde token mogen niet matchen.
+
+    'De Klok Dranken Helmond' bevat 4 tokens waarvan alleen 'dranken'
+    overlapt met 'D Dranken' — token_set_ratio scoort dat alsnog 88
+    maar dat is een onzinmatch en mag niet door.
+    """
+    accounts = [
+        {"id": "a1", "code": "DD", "name": "D Dranken",
+         "name_normalized": "d dranken", "email": None},
+    ]
+    sb = _sb_with(accounts=accounts)
+    assert matcher.match_customer(sb, "De Klok Dranken Helmond") is None
+
+
 def test_match_customer_fuzzy():
     accounts = [
         {"id": "a1", "code": "HH", "name": "Horesca Horecavo B.V.",

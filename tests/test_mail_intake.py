@@ -10,7 +10,7 @@ import mail_intake
 
 def _build_raw_email(subject="Bestelling 123", from_addr="klant@voorbeeld.nl",
                      message_id="<abc@voorbeeld.nl>", body="Hallo, bestel 10 dozen",
-                     attachment=None):
+                     attachment=None, in_reply_to=None, references=None):
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = from_addr
@@ -18,12 +18,72 @@ def _build_raw_email(subject="Bestelling 123", from_addr="klant@voorbeeld.nl",
     msg["Date"] = "Mon, 13 Apr 2026 10:00:00 +0000"
     if message_id is not None:
         msg["Message-ID"] = message_id
+    if in_reply_to:
+        msg["In-Reply-To"] = in_reply_to
+    if references:
+        msg["References"] = references
     msg.set_content(body)
     if attachment:
         filename, ct, data = attachment
         maintype, subtype = ct.split("/", 1)
         msg.add_attachment(data, maintype=maintype, subtype=subtype, filename=filename)
     return msg.as_bytes()
+
+
+# ---------- RFC 5322 thread-detectie ----------
+
+
+def test_parse_raw_extraheert_in_reply_to_en_references():
+    raw = _build_raw_email(
+        message_id="<child@earthwater.nl>",
+        in_reply_to="<parent@earthwater.nl>",
+        references="<grandparent@earthwater.nl> <parent@earthwater.nl>",
+    )
+    parsed = mail_intake._parse_raw(raw)
+    assert parsed["message_id"] == "<child@earthwater.nl>"
+    assert "<parent@earthwater.nl>" in parsed["references"]
+    assert "<grandparent@earthwater.nl>" in parsed["references"]
+
+
+def test_resolve_thread_id_zonder_references_is_root():
+    sb = MagicMock()
+    tid = mail_intake.resolve_thread_id(sb, "<root@x>", [])
+    assert tid == "<root@x>"
+
+
+def test_resolve_thread_id_erft_van_bekende_parent():
+    sb = MagicMock()
+    sb.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value.data = [
+        {"thread_id": "<root@x>", "message_id": "<parent@x>"}
+    ]
+    tid = mail_intake.resolve_thread_id(sb, "<child@x>", ["<parent@x>"])
+    assert tid == "<root@x>"
+
+
+def test_resolve_thread_id_pakt_eerste_bekende_ref():
+    """Eerste reference die in DB staat, levert de thread_id."""
+    sb = MagicMock()
+    responses = [
+        # Eerste lookup: onbekende reference → geen data
+        MagicMock(data=[]),
+        # Tweede lookup: bekende parent → levert thread-root
+        MagicMock(data=[{"thread_id": "<root@x>", "message_id": "<parent@x>"}]),
+    ]
+    sb.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.side_effect = responses
+    tid = mail_intake.resolve_thread_id(
+        sb, "<child@x>", ["<onbekend@x>", "<parent@x>"]
+    )
+    assert tid == "<root@x>"
+
+
+def test_resolve_thread_id_parent_zonder_thread_id_valt_terug_op_message_id():
+    """Oude rijen uit backfill kunnen thread_id=NULL hebben; pak message_id."""
+    sb = MagicMock()
+    sb.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value.data = [
+        {"thread_id": None, "message_id": "<legacy-parent@x>"}
+    ]
+    tid = mail_intake.resolve_thread_id(sb, "<child@x>", ["<legacy-parent@x>"])
+    assert tid == "<legacy-parent@x>"
 
 
 def test_bekend_message_id_skippen():

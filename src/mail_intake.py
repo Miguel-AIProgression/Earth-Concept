@@ -118,6 +118,21 @@ def _parse_raw(raw: bytes) -> dict:
 
     text_body, html_body = _extract_body(msg)
 
+    # RFC 5322-threading: verzamel de Message-IDs waar dit bericht op
+    # reageert. In-Reply-To bevat de directe ouder, References de hele
+    # thread-keten. We tillen ze eruit in ontvangst-volgorde (oudste eerst
+    # in References) zodat de root-lookup later bij voorkeur bij de echte
+    # thread-root uitkomt.
+    refs: list[str] = []
+    refs_header = (msg.get("References") or "").strip()
+    if refs_header:
+        refs.extend(re.findall(r"<[^<>\s]+>", refs_header))
+    in_reply_to = (msg.get("In-Reply-To") or "").strip()
+    if in_reply_to:
+        m = re.search(r"<[^<>\s]+>", in_reply_to)
+        if m and m.group(0) not in refs:
+            refs.append(m.group(0))
+
     return {
         "message_id": message_id,
         "received_at": received_at,
@@ -126,6 +141,7 @@ def _parse_raw(raw: bytes) -> dict:
         "body_text": text_body,
         "body_html": html_body,
         "attachments": _extract_attachments(msg),
+        "references": refs,
     }
 
 
@@ -199,7 +215,34 @@ def upload_attachments(sb, message_id: str, attachments: list[dict]) -> list[dic
     return uploaded
 
 
+def resolve_thread_id(sb, message_id: str, references: list[str]) -> str:
+    """Bepaal de thread_id voor een nieuw binnengekomen mail.
+
+    Strategie: van de oudste naar de nieuwste reference checken of die al
+    in onze incoming_orders zit. De eerste hit → die rij's thread_id is
+    ook de onze (zelfde thread). Als geen van de references bekend is,
+    is dit bericht de thread-root en wordt ``message_id`` gebruikt als
+    thread_id.
+    """
+    for ref in references or []:
+        try:
+            res = (
+                sb.table("incoming_orders")
+                .select("thread_id,message_id")
+                .eq("message_id", ref)
+                .limit(1)
+                .execute()
+            )
+            if res.data:
+                parent = res.data[0]
+                return parent.get("thread_id") or parent.get("message_id") or message_id
+        except Exception as e:
+            log.warning("Thread-lookup mislukt voor ref %s: %s", ref, e)
+    return message_id
+
+
 def save_message(sb, msg: dict) -> dict:
+    thread_id = resolve_thread_id(sb, msg["message_id"], msg.get("references", []))
     row = {
         "message_id": msg["message_id"],
         "received_at": msg["received_at"] or None,
@@ -209,6 +252,7 @@ def save_message(sb, msg: dict) -> dict:
         "body_html": msg.get("body_html"),
         "attachments": msg.get("attachments_meta", []),
         "parse_status": "pending",
+        "thread_id": thread_id,
     }
     res = sb.table("incoming_orders").upsert(
         row, on_conflict="message_id", ignore_duplicates=True

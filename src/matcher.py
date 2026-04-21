@@ -139,6 +139,20 @@ def match_customer(sb, customer_name: str | None) -> dict | None:
     if not best:
         return None
     _, score, account_id = best
+
+    # Extra sanity-check: token_set_ratio is biased naar korte kandidaten die
+    # één sterke token met de input delen ("de klok dranken helmond" vs
+    # "d dranken" → 88, "inbev nederland" vs "independent films nederland"
+    # → 75). Eis minstens 2 gedeelde tokens zodra een van beide sets groter
+    # is dan 2 tokens. Typo-cases (2 tokens ↔ 2 tokens) blijven door de
+    # Levenshtein-score geaccepteerd.
+    chosen = next((a for a in accounts if a["id"] == account_id), None)
+    if chosen is not None:
+        input_tokens = set(normalized.split())
+        cand_tokens = set((chosen.get("name_normalized") or "").split())
+        overlap = input_tokens & cand_tokens
+        if max(len(input_tokens), len(cand_tokens)) > 2 and len(overlap) < 2:
+            return None
     account = next(a for a in accounts if a["id"] == account_id)
     return {
         "id": account["id"],

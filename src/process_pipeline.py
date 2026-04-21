@@ -132,7 +132,15 @@ def process_pending(sb, exact_client=None, anthropic_client=None) -> dict:
     from order_parser import parse_incoming_order
     from order_creator import prepare_order_for_review
 
-    stats = {"parsed": 0, "matched": 0, "posted": 0, "test_context": 0, "failed": 0, "skipped": 0}
+    stats = {
+        "parsed": 0,
+        "matched": 0,
+        "posted": 0,
+        "test_context": 0,
+        "failed": 0,
+        "skipped": 0,
+        "auto_replies": 0,
+    }
 
     unfinished_statuses = ["pending", "parsed", "approved"]
     res = (
@@ -249,6 +257,31 @@ def process_pending(sb, exact_client=None, anthropic_client=None) -> dict:
                 {"parse_status": "failed", "error": f"post error: {e}"}
             ).eq("id", row_id).execute()
             stats["failed"] += 1
+
+    # Stap 4: auto-reply naar de forward-afzender voor rijen die niet
+    # automatisch konden worden verwerkt (parse_failed, no_lines,
+    # customer_unknown, items_unmatched). Max één reply per order via
+    # auto_reply_sent_at. Ook rijen die al eerder op failed/needs_review
+    # staan uit vorige runs worden meegenomen.
+    try:
+        from auto_reply import maybe_send_auto_reply
+
+        reply_targets = (
+            sb.table("incoming_orders")
+            .select("*")
+            .in_("parse_status", ["failed", "needs_review"])
+            .is_("auto_reply_sent_at", "null")
+            .execute()
+        )
+        for r in reply_targets.data or []:
+            try:
+                res = maybe_send_auto_reply(r, sb)
+                if res.get("sent"):
+                    stats["auto_replies"] += 1
+            except Exception as e:
+                log.exception("Auto-reply faalde voor %s: %s", r.get("id"), e)
+    except Exception as e:
+        log.exception("Auto-reply stap overgeslagen: %s", e)
 
     log.info("Pipeline klaar: %s", stats)
     return stats

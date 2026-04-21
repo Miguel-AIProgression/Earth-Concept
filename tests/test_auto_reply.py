@@ -311,3 +311,31 @@ def test_maybe_send_geen_problemen_geen_reply():
     res = auto_reply.maybe_send_auto_reply(row, sb, smtp_sender=lambda m: None)
     assert res["sent"] is False
     assert res["problems"] == 0
+
+
+# ---------- _smtp_config fallback ----------
+
+
+def test_smtp_config_valt_terug_op_mail_credentials(monkeypatch):
+    """Als SMTP_* env-vars ontbreken maar MAIL_USER/MAIL_PASS er zijn,
+    valt auto-reply terug op diezelfde Gmail-credentials."""
+    for k in ("SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "SMTP_FROM"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("MAIL_HOST", "imap.gmail.com")
+    monkeypatch.setenv("MAIL_USER", "orders@earthwater.nl")
+    monkeypatch.setenv("MAIL_PASS", "app-password-123")
+
+    cfg = auto_reply._smtp_config()
+    assert cfg is not None
+    assert cfg["host"] == "smtp.gmail.com"
+    assert cfg["port"] == 587
+    assert cfg["user"] == "orders@earthwater.nl"
+    assert cfg["password"] == "app-password-123"
+    assert cfg["from"] == "orders@earthwater.nl"
+
+
+def test_smtp_config_geen_credentials_retourneert_none(monkeypatch):
+    for k in ("SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "SMTP_FROM",
+              "MAIL_HOST", "MAIL_USER", "MAIL_PASS"):
+        monkeypatch.delenv(k, raising=False)
+    assert auto_reply._smtp_config() is None

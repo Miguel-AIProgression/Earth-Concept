@@ -264,11 +264,25 @@ def build_reply(row: dict, diagnosis: Diagnosis) -> tuple[str, str]:
 
 
 def _smtp_config() -> dict | None:
+    """SMTP-config met fallback op de IMAP-credentials.
+
+    MAIL_USER/MAIL_PASS (Gmail app-password) worden al gebruikt voor IMAP
+    in mail_intake; Gmail accepteert ze ook voor SMTP-send. Dus als er
+    geen dedicated SMTP_USER/SMTP_PASS zijn, vallen we daarop terug.
+    Zelfde logica voor host: als MAIL_HOST=imap.gmail.com, dan default
+    SMTP_HOST=smtp.gmail.com.
+    """
+    user = os.getenv("SMTP_USER") or os.getenv("MAIL_USER")
+    password = os.getenv("SMTP_PASS") or os.getenv("MAIL_PASS")
     host = os.getenv("SMTP_HOST")
+    if not host:
+        mail_host = (os.getenv("MAIL_HOST") or "").lower()
+        if "gmail" in mail_host:
+            host = "smtp.gmail.com"
+        elif mail_host.startswith("imap."):
+            host = "smtp." + mail_host[len("imap."):]
     port = int(os.getenv("SMTP_PORT", "587"))
-    user = os.getenv("SMTP_USER")
-    password = os.getenv("SMTP_PASS")
-    sender = os.getenv("SMTP_FROM", user)
+    sender = os.getenv("SMTP_FROM") or user
     if not (host and user and password and sender):
         return None
     return {"host": host, "port": port, "user": user, "password": password, "from": sender}

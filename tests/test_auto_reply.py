@@ -344,15 +344,61 @@ def test_smtp_config_geen_credentials_retourneert_none(monkeypatch):
 # ---------- Forwarder-filter ----------
 
 
-def test_is_from_forwarder_match():
+def test_is_from_forwarder_intern_domein(monkeypatch):
+    """Elke @earthwater.nl-afzender is OK: Patrick, Thomas, info, etc."""
+    monkeypatch.delenv("FORWARD_SENDER_ALLOWLIST", raising=False)
+    monkeypatch.delenv("FORWARD_SENDER_DOMAIN", raising=False)
     assert auto_reply._is_from_forwarder("Patrick De Nekker <patrick@earthwater.nl>")
-    assert auto_reply._is_from_forwarder("patrick@earthwater.nl")
+    assert auto_reply._is_from_forwarder("Thomas Van Amerom <thomas@earthwater.nl>")
+    assert auto_reply._is_from_forwarder("info earthwater <info@earthwater.nl>")
 
 
-def test_is_from_forwarder_reject_andere_afzender():
-    assert not auto_reply._is_from_forwarder("iemand.anders@klant.nl")
+def test_is_from_forwarder_reject_externe_afzender(monkeypatch):
+    """Adressen buiten @earthwater.nl mogen nooit een auto-reply krijgen."""
+    monkeypatch.delenv("FORWARD_SENDER_ALLOWLIST", raising=False)
+    monkeypatch.delenv("FORWARD_SENDER_DOMAIN", raising=False)
+    assert not auto_reply._is_from_forwarder("iemand@klant.nl")
+    assert not auto_reply._is_from_forwarder("spoof@earthwater.nl.evil.com")
     assert not auto_reply._is_from_forwarder("")
     assert not auto_reply._is_from_forwarder(None)
+
+
+def test_send_auto_reply_logt_naar_sent_emails():
+    """Na een succesvolle send wordt een rij in sent_emails opgeslagen."""
+    sb = MagicMock()
+    inserted = {}
+
+    def fake_insert(data):
+        inserted["data"] = data
+        m = MagicMock()
+        m.execute.return_value = MagicMock(data=[data])
+        return m
+
+    sb.table.return_value.insert.side_effect = fake_insert
+
+    row = {
+        "id": "row-uuid",
+        "from_address": "patrick@earthwater.nl",
+        "subject": "Fwd: X",
+        "message_id": "<abc@x.nl>",
+        "parsed_data": {"customer_name": "Y"},
+    }
+    d = auto_reply.Diagnosis(no_lines=True)
+    ok = auto_reply.send_auto_reply(row, d, smtp_sender=lambda m: None, sb=sb)
+    assert ok is True
+    assert inserted["data"]["type"] == "auto_reply"
+    assert inserted["data"]["incoming_order_id"] == "row-uuid"
+    assert inserted["data"]["to_address"] == "patrick@earthwater.nl"
+    assert "Re:" in inserted["data"]["subject"]
+    assert "Hoi Patrick" in inserted["data"]["body"]
+    assert inserted["data"]["in_reply_to"] == "<abc@x.nl>"
+
+
+def test_is_from_forwarder_allowlist_override(monkeypatch):
+    """Expliciete FORWARD_SENDER_ALLOWLIST beperkt tot specifieke adressen."""
+    monkeypatch.setenv("FORWARD_SENDER_ALLOWLIST", "patrick@earthwater.nl")
+    assert auto_reply._is_from_forwarder("patrick@earthwater.nl")
+    assert not auto_reply._is_from_forwarder("thomas@earthwater.nl")
 
 
 def test_maybe_send_auto_reply_skipt_niet_forwarder():

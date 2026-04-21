@@ -31,16 +31,32 @@ CUSTOMER_CONFIDENCE_THRESHOLD = 0.9
 SUGGESTION_TOP_K = 3
 SUGGESTION_MIN_SCORE = 60  # onder deze fuzzy-score tonen we geen suggesties
 
-# Alleen automatisch mailen met de persoon die orders doorstuurt;
-# zodoende sturen we niet per ongeluk iets naar een oorspronkelijke klant.
-FORWARD_SENDER_EMAIL_DEFAULT = "patrick@earthwater.nl"
+# Alleen automatisch mailen met interne collega's (Earth Water-domein);
+# zodoende sturen we nooit per ongeluk iets naar een oorspronkelijke klant.
+# Override via FORWARD_SENDER_ALLOWLIST (comma-separated) voor specifiekere
+# inperking, bv. "patrick@earthwater.nl,thomas@earthwater.nl".
+FORWARD_SENDER_DOMAIN_DEFAULT = "earthwater.nl"
 
 
 def _is_from_forwarder(from_address: str | None) -> bool:
     if not from_address:
         return False
-    allowed = (os.getenv("FORWARD_SENDER_EMAIL") or FORWARD_SENDER_EMAIL_DEFAULT).strip().lower()
-    return allowed in from_address.lower()
+    # Pak het pure e-mailadres uit headers als 'Naam <adres@host>'.
+    from email.utils import parseaddr
+
+    _, addr = parseaddr(from_address)
+    addr = (addr or "").lower().strip()
+    if not addr or "@" not in addr:
+        return False
+
+    allowlist = os.getenv("FORWARD_SENDER_ALLOWLIST") or ""
+    entries = [e.strip().lower() for e in allowlist.split(",") if e.strip()]
+    if entries:
+        return addr in entries
+
+    domain = (os.getenv("FORWARD_SENDER_DOMAIN") or FORWARD_SENDER_DOMAIN_DEFAULT).strip().lower()
+    # Exact domein-match (geen substring): voorkomt spoof@earthwater.nl.evil.com.
+    return addr.rsplit("@", 1)[-1] == domain
 
 
 @dataclass
@@ -307,13 +323,37 @@ def _send_via_smtp(msg: EmailMessage, config: dict) -> None:
         s.send_message(msg)
 
 
+def _log_sent_email(
+    sb, row: dict, msg: EmailMessage, email_type: str
+) -> None:
+    """Log de verzonden mail in sent_emails zodat het dashboard 'm kan tonen."""
+    if sb is None:
+        return
+    try:
+        sb.table("sent_emails").insert(
+            {
+                "incoming_order_id": row.get("id"),
+                "type": email_type,
+                "to_address": msg["To"] or "",
+                "subject": msg["Subject"] or "",
+                "body": msg.get_content(),
+                "in_reply_to": msg.get("In-Reply-To"),
+            }
+        ).execute()
+    except Exception as e:
+        # Logging-fouten mogen de send-flow nooit breken.
+        log.warning("Kon sent_emails-log niet schrijven voor rij %s: %s", row.get("id"), e)
+
+
 def send_auto_reply(
-    row: dict, diagnosis: Diagnosis, *, smtp_sender=None
+    row: dict, diagnosis: Diagnosis, *, smtp_sender=None, sb=None
 ) -> bool:
     """Stuur de auto-reply. Retourneert True als daadwerkelijk verstuurd.
 
     ``smtp_sender`` is alleen bedoeld voor tests — geef een callable
     ``(msg: EmailMessage) -> None`` mee om de transport te mocken.
+    ``sb`` wordt gebruikt om de verzonden mail in ``sent_emails`` te loggen
+    zodat het dashboard toont wat er verstuurd is.
     """
     to_address = row.get("from_address")
     if not to_address:
@@ -355,6 +395,7 @@ def send_auto_reply(
         log.error("Auto-reply versturen mislukt voor rij %s: %s", row.get("id"), e)
         return False
 
+    _log_sent_email(sb, row, msg, "auto_reply")
     log.info("Auto-reply verstuurd naar %s voor rij %s", to_address, row.get("id"))
     return True
 
@@ -396,7 +437,7 @@ def maybe_send_auto_reply(row: dict, sb, *, smtp_sender=None) -> dict:
     if not diagnosis.has_problems:
         return out
 
-    sent = send_auto_reply(row, diagnosis, smtp_sender=smtp_sender)
+    sent = send_auto_reply(row, diagnosis, smtp_sender=smtp_sender, sb=sb)
     out["sent"] = sent
     if sent:
         try:
@@ -448,7 +489,7 @@ def build_confirmation(row: dict) -> tuple[str, str]:
     return subj, "\n".join(body)
 
 
-def send_confirmation(row: dict, *, smtp_sender=None) -> bool:
+def send_confirmation(row: dict, *, smtp_sender=None, sb=None) -> bool:
     """Stuur een bevestigingsmail in dezelfde thread als de originele forward."""
     to_address = row.get("from_address")
     if not to_address:
@@ -491,6 +532,7 @@ def send_confirmation(row: dict, *, smtp_sender=None) -> bool:
         log.error("Confirmation versturen mislukt voor rij %s: %s", row.get("id"), e)
         return False
 
+    _log_sent_email(sb, row, msg, "confirmation")
     log.info("Confirmation verstuurd naar %s voor rij %s", to_address, row.get("id"))
     return True
 
@@ -523,7 +565,7 @@ def maybe_send_confirmation(row: dict, sb, *, smtp_sender=None) -> dict:
         out["skipped_wrong_status"] = True
         return out
 
-    sent = send_confirmation(row, smtp_sender=smtp_sender)
+    sent = send_confirmation(row, smtp_sender=smtp_sender, sb=sb)
     out["sent"] = sent
     if sent:
         try:

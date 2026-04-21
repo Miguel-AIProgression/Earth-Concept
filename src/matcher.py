@@ -21,7 +21,7 @@ from catalog_sync import normalize_name
 
 log = logging.getLogger(__name__)
 
-CUSTOMER_FUZZY_THRESHOLD = 85
+CUSTOMER_FUZZY_THRESHOLD = 80
 ITEM_FUZZY_THRESHOLD = 92
 
 
@@ -35,14 +35,34 @@ def _normalize_item_code(code: str | None) -> str:
     return c.lstrip("0")
 
 
+_PAGE_SIZE = 1000
+
+
+def _fetch_paginated(sb, table: str, columns: str) -> list[dict]:
+    """Haal alle rijen op in pages; Supabase retourneert max 1000 per call."""
+    rows: list[dict] = []
+    start = 0
+    while True:
+        res = (
+            sb.table(table)
+            .select(columns)
+            .range(start, start + _PAGE_SIZE - 1)
+            .execute()
+        )
+        batch = res.data or []
+        rows.extend(batch)
+        if len(batch) < _PAGE_SIZE:
+            break
+        start += _PAGE_SIZE
+    return rows
+
+
 def _fetch_accounts(sb) -> list[dict]:
-    res = sb.table("exact_accounts").select("id,code,name,name_normalized,email").execute()
-    return res.data or []
+    return _fetch_paginated(sb, "exact_accounts", "id,code,name,name_normalized,email")
 
 
 def _fetch_items(sb) -> list[dict]:
-    res = sb.table("exact_items").select("id,code,description,description_normalized,unit").execute()
-    return res.data or []
+    return _fetch_paginated(sb, "exact_items", "id,code,description,description_normalized,unit")
 
 
 def _fetch_alias(sb, table: str, alias_normalized: str) -> dict | None:
@@ -80,15 +100,40 @@ def match_customer(sb, customer_name: str | None) -> dict | None:
     if not accounts:
         return None
 
-    for a in accounts:
-        if a.get("name_normalized") == normalized:
-            return {"id": a["id"], "name": a["name"], "confidence": 1.0, "source": "exact"}
+    # Exacte match op genormaliseerde naam. Als er dubbele exacte
+    # matches zijn, of als de gekozen account een broertje heeft wiens
+    # genormaliseerde naam een strikte supersnit van de onze is (bv.
+    # "inbev nederland" vs "inbev nederland capelle"), dan is de keuze
+    # niet eenduidig en vlaggen we als 'exact_ambiguous' -- auto-gate
+    # laat dat door naar handmatige review.
+    exact_matches = [a for a in accounts if a.get("name_normalized") == normalized]
+    if exact_matches:
+        chosen = exact_matches[0]
+        my_tokens = set(normalized.split())
+        has_duplicate = len(exact_matches) > 1
+        has_superset_sibling = any(
+            a["id"] != chosen["id"]
+            and my_tokens < set((a.get("name_normalized") or "").split())
+            for a in accounts
+        )
+        source = "exact_ambiguous" if (has_duplicate or has_superset_sibling) else "exact"
+        return {
+            "id": chosen["id"],
+            "name": chosen["name"],
+            "confidence": 1.0,
+            "source": source,
+        }
 
+    # token_set_ratio i.p.v. WRatio — WRatio scoort korte partial substrings
+    # te hoog ("ambassade hotel" vs "am" → 90; "park inn by radisson" vs
+    # "by jessie jaydee" → 85) en levert dan onzinmatches. token_set_ratio
+    # eist echte tokenoverlap en laat typo-tolerantie intact (rapidfuzz
+    # gebruikt Levenshtein op de union-strings).
     choices = {a["id"]: a.get("name_normalized") or "" for a in accounts}
     best = process.extractOne(
         normalized,
         choices,
-        scorer=fuzz.WRatio,
+        scorer=fuzz.token_set_ratio,
         score_cutoff=CUSTOMER_FUZZY_THRESHOLD,
     )
     if not best:
@@ -100,6 +145,96 @@ def match_customer(sb, customer_name: str | None) -> dict | None:
         "name": account["name"],
         "confidence": round(score / 100, 3),
         "source": "fuzzy",
+    }
+
+
+def _normalize_postcode(zipcode: str | None) -> str:
+    return (zipcode or "").strip().replace(" ", "").upper()
+
+
+def match_customer_by_address(
+    exact,
+    sb,
+    delivery_address: dict | None,
+    customer_name_hint: str | None = None,
+) -> dict | None:
+    """Zoek een klant op via het afleveradres als naam-match faalt.
+
+    Queryt Exact's /crm/Addresses op postcode (met en zonder spatie) en
+    scoort kandidaat-accounts op stad- en straat-overlap + optionele
+    naam-hint. source='address' — past nooit in de auto-approve gate.
+    """
+    if not delivery_address:
+        return None
+    raw_zip = (delivery_address.get("zip") or "").strip()
+    if not raw_zip:
+        return None
+
+    city_target = (delivery_address.get("city") or "").strip().lower()
+    street_target = (delivery_address.get("street") or "").strip().lower()
+    zip_norm = _normalize_postcode(raw_zip)
+
+    # Probeer eerst de postcode zoals ontvangen, daarna zonder spatie.
+    addresses: list[dict] = []
+    tried: set[str] = set()
+    for pc in (raw_zip, zip_norm):
+        if not pc or pc in tried:
+            continue
+        tried.add(pc)
+        pc_escaped = pc.replace("'", "''")
+        try:
+            res = exact.get(
+                "/crm/Addresses",
+                params={
+                    "$filter": f"Postcode eq '{pc_escaped}'",
+                    "$select": "ID,Account,AddressLine1,Postcode,City",
+                },
+            ) or []
+        except Exception as e:
+            log.warning("Address-lookup op postcode %s faalde: %s", pc, e)
+            continue
+        addresses.extend(res)
+        if res:
+            break
+
+    if not addresses:
+        return None
+
+    accounts_by_id = {a["id"]: a for a in _fetch_accounts(sb)}
+    name_hint_norm = normalize_name(customer_name_hint) if customer_name_hint else ""
+
+    best: tuple[int, str, dict] | None = None
+    for a in addresses:
+        acc_id = a.get("Account")
+        acc = accounts_by_id.get(acc_id) if acc_id else None
+        if not acc:
+            continue
+        score = 70  # postcode matcht
+        addr_city = (a.get("City") or "").strip().lower()
+        addr_street = (a.get("AddressLine1") or "").strip().lower()
+        if city_target and addr_city and city_target == addr_city:
+            score += 15
+        if street_target and addr_street:
+            prefix = min(8, len(street_target), len(addr_street))
+            if prefix and (addr_street[:prefix] == street_target[:prefix]):
+                score += 10
+        if name_hint_norm:
+            name_sim = fuzz.token_set_ratio(
+                name_hint_norm, acc.get("name_normalized") or ""
+            )
+            if name_sim >= 60:
+                score += min(int(name_sim * 0.05), 5)
+        if best is None or score > best[0]:
+            best = (score, acc_id, acc)
+
+    if not best:
+        return None
+    score, acc_id, acc = best
+    return {
+        "id": acc_id,
+        "name": acc["name"],
+        "confidence": round(min(score, 100) / 100, 3),
+        "source": "address",
     }
 
 

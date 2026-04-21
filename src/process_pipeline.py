@@ -4,13 +4,16 @@ Werking:
 1. Haal nieuwe mails uit Gmail (mail_intake.process_inbox).
 2. Pak alle incoming_orders met parse_status == 'pending' of 'parsed'.
 3. Parse met Claude (parse_incoming_order) -> parsed_data + status.
-4. Match klant + items (prepare_order_for_review) -> status ready_for_approval of needs_review.
-5. POST naar Exact voor 'ready_for_approval' rijen, tenzij afzender in TEST_SENDERS.
+4. Match klant + items (prepare_order_for_review) -> status approved,
+   ready_for_approval of needs_review. Bij confidence >= 0.85 en
+   vertrouwde item-sources wordt de order direct op 'approved' gezet.
+5. POST naar Exact voor 'approved' rijen, tenzij afzender in TEST_SENDERS.
    Test-mails blijven zichtbaar in het dashboard met status 'test_context'.
 
 Parse_status stroom:
-    pending -> parsed -> ready_for_approval -> created          (productie-mails)
-    pending -> parsed -> ready_for_approval -> test_context     (miguel@aiprogression.nl)
+    pending -> parsed -> approved -> created                    (hoge confidence, auto)
+    pending -> parsed -> approved -> test_context               (miguel@aiprogression.nl)
+    pending -> parsed -> ready_for_approval -> approved -> ...  (handmatige goedkeuring)
     pending -> needs_review                                     (lage confidence / geen match)
     pending -> failed                                           (parse-error)
 """
@@ -48,6 +51,29 @@ def _normalize_payload_dates(payload: dict) -> dict:
                 ms = int(m.group(1))
                 dt = datetime.fromtimestamp(ms / 1000, tz=timezone.utc)
                 out[key] = dt.strftime("%Y-%m-%dT00:00:00")
+    return out
+
+
+def _strip_zero_unit_prices(payload: dict) -> dict:
+    """Haal UnitPrice=0 weg op regels zodat Exact de default-prijs invult.
+
+    Oudere payloads (vóór de prijs-fix) bevatten nog UnitPrice: 0;
+    zonder strippen komt de order met 0,00 in Exact terecht.
+    """
+    lines = payload.get("SalesOrderLines")
+    if not isinstance(lines, list):
+        return payload
+    cleaned = []
+    for line in lines:
+        if not isinstance(line, dict):
+            cleaned.append(line)
+            continue
+        up = line.get("UnitPrice")
+        if isinstance(up, (int, float)) and up <= 0:
+            line = {k: v for k, v in line.items() if k != "UnitPrice"}
+        cleaned.append(line)
+    out = dict(payload)
+    out["SalesOrderLines"] = cleaned
     return out
 
 
@@ -162,9 +188,9 @@ def process_pending(sb, exact_client=None, anthropic_client=None) -> dict:
                 continue
 
         # Stap 3: POST naar Exact.
-        # Alleen expliciet 'approved' (door Patrick via dashboard) mag door.
-        # 'ready_for_approval' wacht op de goedkeur-knop -- anders zou de
-        # review-gate compleet overgeslagen worden.
+        # Alleen 'approved' rijen gaan door -- of ze nu auto-approved zijn
+        # door prepare_order_for_review (confidence >= 0.85) of handmatig
+        # goedgekeurd in het dashboard. 'ready_for_approval' blijft wachten.
         if status != "approved":
             continue
 
@@ -186,6 +212,22 @@ def process_pending(sb, exact_client=None, anthropic_client=None) -> dict:
             if not payload:
                 raise ValueError("Geen salesorder_payload in parsed_data")
             payload = _normalize_payload_dates(payload)
+            payload = _strip_zero_unit_prices(payload)
+
+            # Zet het afleveradres uit de PDF/mail om naar een Address-GUID,
+            # anders pakt Exact het default-adres van de Account (dat kan
+            # "NIET GEBRUIKEN"-records of verouderde adressen zijn).
+            if "DeliveryAddress" not in payload:
+                from exact_addresses import ensure_delivery_address_id
+
+                addr_id = ensure_delivery_address_id(
+                    exact_client,
+                    payload.get("OrderedBy"),
+                    parsed_data.get("delivery_address"),
+                )
+                if addr_id:
+                    payload["DeliveryAddress"] = addr_id
+
             resp = exact_client.post("/salesorder/SalesOrders", payload)
             exact_id = resp.get("ID") if isinstance(resp, dict) else None
             order_nr = resp.get("OrderNumber") if isinstance(resp, dict) else None

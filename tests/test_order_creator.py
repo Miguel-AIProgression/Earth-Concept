@@ -55,6 +55,34 @@ def test_build_salesorder_payload_zonder_datum():
     assert "DeliveryDate" not in payload
 
 
+def test_build_salesorder_payload_laat_unitprice_weg_bij_nul_of_null():
+    parsed = {"customer_reference": "X"}
+
+    # unit_price == 0 -> UnitPrice weg (Exact pakt default).
+    line_zero = _matched_line(price=0)
+    payload = build_salesorder_payload(parsed, "acc", [line_zero])
+    assert "UnitPrice" not in payload["SalesOrderLines"][0]
+
+    # unit_price ontbreekt -> UnitPrice weg.
+    line_missing = _matched_line()
+    line_missing["line"].pop("unit_price", None)
+    payload = build_salesorder_payload(parsed, "acc", [line_missing])
+    assert "UnitPrice" not in payload["SalesOrderLines"][0]
+
+    # unit_price is None -> UnitPrice weg.
+    line_none = _matched_line()
+    line_none["line"]["unit_price"] = None
+    payload = build_salesorder_payload(parsed, "acc", [line_none])
+    assert "UnitPrice" not in payload["SalesOrderLines"][0]
+
+
+def test_build_salesorder_payload_echte_prijs_blijft():
+    parsed = {"customer_reference": "X"}
+    line = _matched_line(price=2.5)
+    payload = build_salesorder_payload(parsed, "acc", [line])
+    assert payload["SalesOrderLines"][0]["UnitPrice"] == 2.5
+
+
 def test_build_salesorder_payload_missende_item_id_raised():
     parsed = {"customer_reference": "X"}
     bad = _matched_line(item_id=None)
@@ -81,7 +109,8 @@ def test_compute_confidence_nul_bij_missende_item():
 # ----- prepare_order_for_review -----
 
 
-def test_prepare_order_for_review_ready():
+def test_prepare_order_for_review_auto_approved():
+    """Hoge confidence + trusted items => direct 'approved' (auto-gate)."""
     sb = _mock_sb()
     row = {
         "id": 42,
@@ -91,6 +120,83 @@ def test_prepare_order_for_review_ready():
             "delivery_date": "2026-05-15",
             "lines": [
                 {"item_code": "EW-500", "description": "Still", "quantity": 20, "unit_price": 1.0}
+            ],
+        },
+    }
+
+    with patch("order_creator.matcher") as mocked:
+        mocked.match_customer.return_value = {
+            "id": "acc-1", "name": "Minor Hotels", "confidence": 1.0, "source": "exact",
+        }
+        mocked.match_items.return_value = [
+            {
+                "line": row["parsed_data"]["lines"][0],
+                "item_id": "item-1",
+                "item_code": "EW-500",
+                "confidence": 1.0,
+                "source": "code",
+            }
+        ]
+        updated = prepare_order_for_review(row, client=None, sb=sb)
+
+    assert updated["parse_status"] == "approved"
+    parsed = updated["parsed_data"]
+    assert parsed["match_confidence"] >= 0.85
+    assert parsed["salesorder_payload"]["OrderedBy"] == "acc-1"
+    assert parsed["matched_customer"]["id"] == "acc-1"
+    sb.table.assert_called_with("incoming_orders")
+
+
+def test_prepare_order_for_review_fuzzy_klant_needs_review():
+    """Fuzzy klant-match mag nooit auto-approve, ook niet bij hoge totaal-score.
+
+    Waargebeurd: 'Inbev Nederland NV' matchte op 'Independent Films
+    Nederland B.V.' met 0.855; items waren code-match 1.0 -> overall 0.942,
+    ruim boven 0.85. Zonder deze guard ging de order naar de verkeerde
+    relatie in Exact.
+    """
+    sb = _mock_sb()
+    row = {
+        "id": 77,
+        "parsed_data": {
+            "customer_name": "Inbev Nederland NV",
+            "lines": [
+                {"item_code": "EW-500", "description": "Still", "quantity": 10, "unit_price": 1.0}
+            ],
+        },
+    }
+
+    with patch("order_creator.matcher") as mocked:
+        mocked.match_customer.return_value = {
+            "id": "wrong-acc",
+            "name": "Independent Films Nederland B.V.",
+            "confidence": 0.855,
+            "source": "fuzzy",
+        }
+        mocked.match_items.return_value = [
+            {
+                "line": row["parsed_data"]["lines"][0],
+                "item_id": "item-1",
+                "item_code": "EW-500",
+                "confidence": 1.0,
+                "source": "code",
+            }
+        ]
+        updated = prepare_order_for_review(row, client=None, sb=sb)
+
+    assert updated["parse_status"] == "needs_review"
+    assert updated["parsed_data"]["match_confidence"] >= 0.85
+
+
+def test_prepare_order_for_review_zonder_prijs_needs_review():
+    """Hoge confidence + trusted code, maar regel zonder prijs => needs_review."""
+    sb = _mock_sb()
+    row = {
+        "id": 51,
+        "parsed_data": {
+            "customer_name": "Minor Hotels",
+            "lines": [
+                {"item_code": "EW-500", "description": "Still", "quantity": 20, "unit_price": 0}
             ],
         },
     }
@@ -108,12 +214,39 @@ def test_prepare_order_for_review_ready():
         ]
         updated = prepare_order_for_review(row, client=None, sb=sb)
 
-    assert updated["parse_status"] == "ready_for_approval"
-    parsed = updated["parsed_data"]
-    assert parsed["match_confidence"] >= 0.9
-    assert parsed["salesorder_payload"]["OrderedBy"] == "acc-1"
-    assert parsed["matched_customer"]["id"] == "acc-1"
-    sb.table.assert_called_with("incoming_orders")
+    assert updated["parse_status"] == "needs_review"
+
+
+def test_prepare_order_for_review_onder_drempel():
+    """Confidence 0.84 => needs_review, ook al is het item trusted."""
+    sb = _mock_sb()
+    row = {
+        "id": 99,
+        "parsed_data": {
+            "customer_name": "Twijfelklant",
+            "lines": [
+                {"item_code": "EW-500", "description": "Still", "quantity": 5, "unit_price": 1.0}
+            ],
+        },
+    }
+
+    with patch("order_creator.matcher") as mocked:
+        # 0.6*0.4 + 1.0*0.6 = 0.84, net onder de gate.
+        mocked.match_customer.return_value = {
+            "id": "acc-2", "name": "Twijfelklant", "confidence": 0.6, "source": "exact",
+        }
+        mocked.match_items.return_value = [
+            {
+                "line": row["parsed_data"]["lines"][0],
+                "item_id": "item-1",
+                "item_code": "EW-500",
+                "confidence": 1.0,
+                "source": "code",
+            }
+        ]
+        updated = prepare_order_for_review(row, client=None, sb=sb)
+
+    assert updated["parse_status"] == "needs_review"
 
 
 def test_prepare_order_for_review_needs_review():

@@ -103,6 +103,7 @@ def reingest(row_id: str) -> dict:
         "exact_order_id": None,
         "error": None,
         "auto_reply_sent_at": None,
+        "confirmation_sent_at": None,
     }
     sb.table("incoming_orders").update(update).eq("id", row_id).execute()
     log.info("Rij %s bijgewerkt, status=pending, bijlages=%d", row_id, len(meta))

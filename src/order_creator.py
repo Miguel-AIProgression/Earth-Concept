@@ -39,17 +39,27 @@ def build_salesorder_payload(
                 f"Kan geen payload bouwen: item_id ontbreekt voor regel {m.get('line')}"
             )
         line = m["line"]
-        lines_payload.append({
+        line_payload: dict[str, Any] = {
             "Item": m["item_id"],
             "Quantity": line.get("quantity", 0),
-            "UnitPrice": line.get("unit_price", 0),
             "Description": line.get("description", ""),
-        })
+        }
+        # UnitPrice alleen meesturen als de PDF een echte prijs bevat;
+        # anders laat Exact de standaardprijs van het Item / de prijslijst
+        # van de klant toepassen (nul-prijzen zijn geen geldige waarde).
+        unit_price = line.get("unit_price")
+        if isinstance(unit_price, (int, float)) and unit_price > 0:
+            line_payload["UnitPrice"] = unit_price
+        lines_payload.append(line_payload)
 
+    # Description valt terug op de inkooporder/PO-nummer: dat is de herkenning
+    # die Patrick in Exact nodig heeft -- YourRef is niet altijd zichtbaar in
+    # overzichten, Description wel.
+    customer_ref = parsed.get("customer_reference") or ""
     payload: dict[str, Any] = {
         "OrderedBy": account_id,
-        "YourRef": parsed.get("customer_reference", ""),
-        "Description": description or parsed.get("description", ""),
+        "YourRef": customer_ref,
+        "Description": description or parsed.get("description") or customer_ref,
         "SalesOrderLines": lines_payload,
     }
 
@@ -89,6 +99,13 @@ def prepare_order_for_review(incoming_row: dict, client, sb) -> dict:
     lines = parsed.get("lines") or []
 
     customer_match = matcher.match_customer(sb, customer_name)
+    # Fallback: geen naam-hit? Probeer op postcode/stad/straat van het
+    # afleveradres. Blijft 'address'-source (nooit auto-gate) zodat
+    # Patrick altijd bevestigt.
+    if customer_match is None and client is not None:
+        customer_match = matcher.match_customer_by_address(
+            client, sb, parsed.get("delivery_address"), customer_name_hint=customer_name
+        )
     item_matches = matcher.match_items(sb, lines)
     confidence = compute_overall_confidence(customer_match, item_matches)
 
@@ -116,13 +133,39 @@ def prepare_order_for_review(incoming_row: dict, client, sb) -> dict:
     # Fuzzy item-matches zijn te riskant voor auto-gate: zelfs bij hoge
     # WRatio-score kan het product compleet verkeerd zijn (bv. Sparkling
     # vs. ANWB-TT). Vereis dat elk item via code of alias is gekoppeld.
-    trusted_sources = {"code", "code-prefix", "alias"}
+    trusted_item_sources = {"code", "code-prefix", "alias"}
     all_items_trusted = bool(item_matches) and all(
-        (m.get("source") in trusted_sources) for m in item_matches
+        (m.get("source") in trusted_item_sources) for m in item_matches
     )
 
-    if payload is not None and confidence >= 0.9 and all_items_trusted:
-        new_status = "ready_for_approval"
+    # Zelfde eis voor de klant: een fuzzy WRatio van 0.85+ is niet betrouwbaar
+    # genoeg om blind te POSTen. "Inbev Nederland NV" matchte bv. op
+    # "Independent Films Nederland B.V." (0.855). Alleen exacte naam of een
+    # eerder bevestigde alias mag auto-gate passeren.
+    trusted_customer_sources = {"alias", "exact", "manual"}
+    customer_trusted = bool(customer_match) and (
+        customer_match.get("source") in trusted_customer_sources
+    )
+
+    # Elke regel moet een echte prijs hebben; zonder prijs valt Exact
+    # terug op de standaard-prijslijst en dat willen we niet blind doen.
+    all_lines_priced = bool(item_matches) and all(
+        isinstance((m.get("line") or {}).get("unit_price"), (int, float))
+        and (m.get("line") or {}).get("unit_price", 0) > 0
+        for m in item_matches
+    )
+
+    # Auto-approve boven 0.85 met vertrouwde match (klant én items) + prijs
+    # op elke regel: pipeline POST direct naar Exact. Fuzzy klant- of item-
+    # match of ontbrekende prijs -> needs_review.
+    if (
+        payload is not None
+        and confidence >= 0.85
+        and customer_trusted
+        and all_items_trusted
+        and all_lines_priced
+    ):
+        new_status = "approved"
     else:
         new_status = "needs_review"
 

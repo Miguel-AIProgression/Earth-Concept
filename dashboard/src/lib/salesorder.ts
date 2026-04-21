@@ -38,12 +38,21 @@ export function buildSalesOrderPayload(
   if (!items.length) return null;
   if (items.some((m) => !m.item_id)) return null;
 
-  const lines = items.map((m) => ({
-    Item: m.item_id,
-    Quantity: m.line.quantity ?? 0,
-    UnitPrice: m.line.unit_price ?? 0,
-    Description: m.line.description ?? "",
-  }));
+  // UnitPrice alleen meesturen als de PDF een echte prijs heeft; anders
+  // laat Exact de standaardprijs van het Item / de prijslijst van de
+  // klant toepassen (nul is geen geldige orderprijs).
+  const lines = items.map((m) => {
+    const line: Record<string, unknown> = {
+      Item: m.item_id,
+      Quantity: m.line.quantity ?? 0,
+      Description: m.line.description ?? "",
+    };
+    const unitPrice = m.line.unit_price;
+    if (typeof unitPrice === "number" && unitPrice > 0) {
+      line.UnitPrice = unitPrice;
+    }
+    return line;
+  });
 
   const remarks: string[] = [];
   if (parsed.notes) remarks.push(parsed.notes);

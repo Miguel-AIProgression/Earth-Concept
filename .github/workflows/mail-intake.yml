@@ -1,22 +1,19 @@
 name: Mail intake + pipeline
 
 on:
-  schedule:
-    # Elke 5 minuten: mails ophalen, parsen, matchen en POST naar Exact.
-    # GitHub skipt scheduled runs bij drukte, dus parallel triggert
-    # cron-job.org de workflow via repository_dispatch (event: mail-intake).
-    - cron: "*/5 * * * *"
+  # Getriggerd door Supabase pg_cron (elke 2 min), die via pg_net een
+  # repository_dispatch POST doet. GitHub's eigen schedule-cron is uitgezet:
+  # die skipte runs regelmatig 1-3 uur tijdens drukte.
+  repository_dispatch:
+    types: [mail-intake]
+  # Elke merge naar main moet direct een run starten zodat een fix niet
+  # hoeft te wachten op de volgende pg_cron-tick.
   push:
-    # Elke merge naar main moet direct een run starten zodat een fix
-    # niet hoeft te wachten op de volgende cron-tick (en scheduled runs
-    # die GitHub mogelijk overslaat).
     branches: [main]
     paths:
       - "src/**"
       - "requirements.txt"
       - ".github/workflows/mail-intake.yml"
-  repository_dispatch:
-    types: [mail-intake]
   workflow_dispatch:
 
 concurrency:

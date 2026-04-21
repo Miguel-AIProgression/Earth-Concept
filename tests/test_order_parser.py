@@ -118,7 +118,7 @@ def test_pdf_download_uit_storage():
         "id": "abc",
         "body_text": None,
         "body_html": None,
-        "attachments": [{"storage_path": "abc/file.pdf", "filename": "file.pdf"}],
+        "attachments": [{"storage_path": "abc/file.pdf", "filename": "file.pdf", "content_type": "application/pdf"}],
     }
     parse_incoming_order(row, sb, client=client)
     sb.storage.from_.assert_called_with("order-attachments")

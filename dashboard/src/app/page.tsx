@@ -97,7 +97,7 @@ export default function IntakePage() {
       )}
 
       <div className="text-xs text-gray-400 text-center">
-        Auto-refresh elke 30 seconden. Pipeline draait elke 5 minuten via GitHub Actions.
+        Auto-refresh elke 30 seconden. Pipeline draait elke 2 minuten via Supabase pg_cron.
       </div>
     </div>
   );

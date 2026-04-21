@@ -31,6 +31,17 @@ CUSTOMER_CONFIDENCE_THRESHOLD = 0.9
 SUGGESTION_TOP_K = 3
 SUGGESTION_MIN_SCORE = 60  # onder deze fuzzy-score tonen we geen suggesties
 
+# Alleen automatisch mailen met de persoon die orders doorstuurt;
+# zodoende sturen we niet per ongeluk iets naar een oorspronkelijke klant.
+FORWARD_SENDER_EMAIL_DEFAULT = "patrick@earthwater.nl"
+
+
+def _is_from_forwarder(from_address: str | None) -> bool:
+    if not from_address:
+        return False
+    allowed = (os.getenv("FORWARD_SENDER_EMAIL") or FORWARD_SENDER_EMAIL_DEFAULT).strip().lower()
+    return allowed in from_address.lower()
+
 
 @dataclass
 class ItemSuggestion:
@@ -354,10 +365,24 @@ def maybe_send_auto_reply(row: dict, sb, *, smtp_sender=None) -> dict:
     Update ``auto_reply_sent_at`` in Supabase bij succes. Retourneert
     een kleine stats-dict voor logging.
     """
-    out = {"diagnosed": False, "skipped_already_sent": False, "sent": False, "problems": 0}
+    out = {
+        "diagnosed": False,
+        "skipped_already_sent": False,
+        "skipped_not_forwarder": False,
+        "sent": False,
+        "problems": 0,
+    }
 
     if row.get("auto_reply_sent_at"):
         out["skipped_already_sent"] = True
+        return out
+
+    if not _is_from_forwarder(row.get("from_address")):
+        out["skipped_not_forwarder"] = True
+        log.info(
+            "Auto-reply overgeslagen voor rij %s: afzender %r is niet de forwarder",
+            row.get("id"), row.get("from_address"),
+        )
         return out
 
     diagnosis = diagnose_order(row, sb=sb)
@@ -380,5 +405,134 @@ def maybe_send_auto_reply(row: dict, sb, *, smtp_sender=None) -> dict:
             ).eq("id", row.get("id")).execute()
         except Exception as e:
             log.error("Kon auto_reply_sent_at niet updaten voor %s: %s", row.get("id"), e)
+
+    return out
+
+
+# ---------- Bevestigingsmail na succesvolle POST naar Exact ----------
+
+
+def build_confirmation(row: dict) -> tuple[str, str]:
+    """Bouw subject + plain-text body voor een 'order in Exact'-bevestiging."""
+    original_subject = row.get("subject") or "je bestelling"
+    subj = original_subject.strip()
+    if not subj.lower().startswith("re:"):
+        subj = f"Re: {subj}"
+
+    parsed = row.get("parsed_data") or {}
+    cust = (parsed.get("matched_customer") or {}).get("name") or parsed.get("customer_name") or "(onbekend)"
+    ref = parsed.get("customer_reference") or "—"
+    delivery = parsed.get("delivery_date") or "—"
+    lines = parsed.get("lines") or []
+    order_nr = row.get("exact_order_id") or "—"
+
+    body: list[str] = []
+    body.append("Hoi Patrick,")
+    body.append("")
+    body.append("Deze order is automatisch aangemaakt in Exact:")
+    body.append("")
+    body.append(f"- Klant: {cust}")
+    body.append(f"- PO-nummer: {ref}")
+    body.append(f"- Leverdatum: {delivery}")
+    body.append(f"- Exact SalesOrder: {order_nr}")
+    if lines:
+        body.append(f"- Regels: {len(lines)}")
+        for ln in lines:
+            qty = ln.get("quantity") if ln.get("quantity") is not None else "?"
+            code = ln.get("item_code") or "—"
+            desc = ln.get("description") or "—"
+            body.append(f"    • {qty}× {code}  {desc}")
+    body.append("")
+    body.append("— Earth Water orderverwerking (automatisch)")
+
+    return subj, "\n".join(body)
+
+
+def send_confirmation(row: dict, *, smtp_sender=None) -> bool:
+    """Stuur een bevestigingsmail in dezelfde thread als de originele forward."""
+    to_address = row.get("from_address")
+    if not to_address:
+        log.warning("Confirmation overgeslagen: geen from_address op rij %s", row.get("id"))
+        return False
+
+    config = _smtp_config()
+    if smtp_sender is None and config is None:
+        log.warning(
+            "Confirmation NIET verstuurd (SMTP niet geconfigureerd) voor rij %s",
+            row.get("id"),
+        )
+        return False
+
+    from_header = (config or {}).get("from") or os.getenv("SMTP_FROM") or "noreply@earthwater.nl"
+
+    subject, body = build_confirmation(row)
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = from_header
+    msg["To"] = to_address
+    msg["Message-ID"] = make_msgid(domain="earthwater.nl")
+
+    original_msg_id = row.get("message_id")
+    if original_msg_id:
+        ref = original_msg_id.strip()
+        if not ref.startswith("<"):
+            ref = f"<{ref}>"
+        msg["In-Reply-To"] = ref
+        msg["References"] = ref
+
+    msg.set_content(body)
+
+    try:
+        if smtp_sender is not None:
+            smtp_sender(msg)
+        else:
+            _send_via_smtp(msg, config)
+    except Exception as e:
+        log.error("Confirmation versturen mislukt voor rij %s: %s", row.get("id"), e)
+        return False
+
+    log.info("Confirmation verstuurd naar %s voor rij %s", to_address, row.get("id"))
+    return True
+
+
+def maybe_send_confirmation(row: dict, sb, *, smtp_sender=None) -> dict:
+    """Stuur een bevestigingsmail voor een order die in Exact is aangemaakt.
+
+    Triggered wanneer parse_status == 'created', exact_order_id is gevuld,
+    confirmation_sent_at is NULL, en de forward-afzender Patrick is.
+    """
+    out = {
+        "skipped_already_sent": False,
+        "skipped_not_forwarder": False,
+        "skipped_wrong_status": False,
+        "sent": False,
+    }
+
+    if row.get("confirmation_sent_at"):
+        out["skipped_already_sent"] = True
+        return out
+
+    if not _is_from_forwarder(row.get("from_address")):
+        out["skipped_not_forwarder"] = True
+        return out
+
+    # parse_status='created' is de bron van waarheid; exact_order_id kan
+    # in legacy-rijen leeg zijn (order via dashboard-POST aangemaakt vóór
+    # de pipeline het id terugschreef). In dat geval toont de mail '—'.
+    if row.get("parse_status") != "created":
+        out["skipped_wrong_status"] = True
+        return out
+
+    sent = send_confirmation(row, smtp_sender=smtp_sender)
+    out["sent"] = sent
+    if sent:
+        try:
+            sb.table("incoming_orders").update(
+                {"confirmation_sent_at": datetime.now(timezone.utc).isoformat()}
+            ).eq("id", row.get("id")).execute()
+        except Exception as e:
+            log.error(
+                "Kon confirmation_sent_at niet updaten voor %s: %s", row.get("id"), e
+            )
 
     return out

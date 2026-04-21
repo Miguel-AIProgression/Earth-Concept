@@ -140,6 +140,7 @@ def process_pending(sb, exact_client=None, anthropic_client=None) -> dict:
         "failed": 0,
         "skipped": 0,
         "auto_replies": 0,
+        "confirmations": 0,
     }
 
     unfinished_statuses = ["pending", "parsed", "approved"]
@@ -282,6 +283,29 @@ def process_pending(sb, exact_client=None, anthropic_client=None) -> dict:
                 log.exception("Auto-reply faalde voor %s: %s", r.get("id"), e)
     except Exception as e:
         log.exception("Auto-reply stap overgeslagen: %s", e)
+
+    # Stap 5: bevestigingsmail voor orders die succesvol in Exact zijn
+    # aangemaakt (parse_status='created') en waarvoor nog geen bevestiging
+    # is verstuurd. Alleen naar de forward-afzender (Patrick).
+    try:
+        from auto_reply import maybe_send_confirmation
+
+        confirm_targets = (
+            sb.table("incoming_orders")
+            .select("*")
+            .eq("parse_status", "created")
+            .is_("confirmation_sent_at", "null")
+            .execute()
+        )
+        for r in confirm_targets.data or []:
+            try:
+                res = maybe_send_confirmation(r, sb)
+                if res.get("sent"):
+                    stats["confirmations"] += 1
+            except Exception as e:
+                log.exception("Confirmation faalde voor %s: %s", r.get("id"), e)
+    except Exception as e:
+        log.exception("Confirmation stap overgeslagen: %s", e)
 
     log.info("Pipeline klaar: %s", stats)
     return stats

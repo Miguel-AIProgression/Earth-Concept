@@ -24,11 +24,15 @@ function cleanFrom(from: string | null): string {
 }
 
 /**
- * Groepeert mails per thread_id en kiest één "primary" rij per thread:
+ * Groepeert mails per bestelling en kiest één "primary" rij per groep:
  * de rij met de meest-gevorderde status (created > approved > ... >
  * needs_review > failed > pending) wint; bij gelijke status de nieuwste.
- * Zo ziet de gebruiker één rij per bestelling, ook als er 3 Fwd:/Re:-
- * mails in dezelfde thread kwamen.
+ *
+ * Groeperingssleutel: eerst op PO-nummer (parsed_data.customer_reference)
+ * wanneer beschikbaar, anders op thread_id. RFC-threading alleen is niet
+ * genoeg — Patrick stuurt dezelfde bestelling vaak meerdere keren los
+ * door, zonder In-Reply-To/References-headers, dus die zouden anders
+ * elk een eigen rij worden.
  */
 const STATUS_RANK: Record<string, number> = {
   created: 100,
@@ -42,10 +46,16 @@ const STATUS_RANK: Record<string, number> = {
   ignored: 10,
 };
 
+function groupKey(r: IncomingOrder): string {
+  const po = r.parsed_data?.customer_reference?.trim();
+  if (po) return `po:${po.toLowerCase()}`;
+  return `thread:${r.thread_id || r.id}`;
+}
+
 function groupByThread(rows: IncomingOrder[]): { primary: IncomingOrder; count: number }[] {
   const buckets = new Map<string, IncomingOrder[]>();
   for (const r of rows) {
-    const key = r.thread_id || r.id;
+    const key = groupKey(r);
     const list = buckets.get(key) ?? [];
     list.push(r);
     buckets.set(key, list);

@@ -79,23 +79,80 @@ def _extract_body(msg) -> tuple[str, str]:
     return text_body, html_body
 
 
+_PDF_MAGIC = b"%PDF-"
+
+
+def _iter_parts(msg):
+    """Yield every leaf part, inclusief binnen message/rfc822-wrappers.
+
+    email.Message.walk() daalt niet automatisch af in doorgestuurde/genest
+    berichten (type message/rfc822). Die komen vaak binnen als één part met
+    het originele bericht als payload, en de PDF-bijlage zit daar weer een
+    laag dieper in. Zonder deze recursie missen we de PDF van Outlook-
+    forwards volledig.
+    """
+    for part in msg.walk():
+        if part.get_content_type() == "message/rfc822":
+            payload = part.get_payload()
+            # rfc822-payload is een lijst met één Message-object.
+            inner = payload[0] if isinstance(payload, list) and payload else payload
+            if hasattr(inner, "walk"):
+                yield from _iter_parts(inner)
+            continue
+        if part.get_content_maintype() == "multipart":
+            continue
+        yield part
+
+
 def _extract_attachments(msg) -> list[dict]:
     attachments = []
     if not msg.is_multipart():
         return attachments
-    for part in msg.walk():
-        if part.get_content_maintype() == "multipart":
-            continue
+    seen: set[bytes] = set()
+    for idx, part in enumerate(_iter_parts(msg)):
         filename = part.get_filename()
-        if not filename:
-            continue
+        content_type = (part.get_content_type() or "").lower()
         disp = part.get_content_disposition()
-        if disp not in ("attachment", "inline"):
-            continue
+
+        # Pak alles met een expliciete filename (attachment of inline) én
+        # alles wat er als PDF uitziet -- ook zonder filename en/of zonder
+        # Content-Disposition. Outlook-forwards sturen de PDF soms aan als
+        # 'application/octet-stream' zonder filename, of als application/pdf
+        # inline zonder disposition -- beide werden voorheen geskipt.
         data = part.get_payload(decode=True) or b""
+        is_pdf_bytes = data[:5] == _PDF_MAGIC
+        looks_like_pdf = (
+            content_type == "application/pdf"
+            or (filename or "").lower().endswith(".pdf")
+            or is_pdf_bytes
+        )
+
+        if not filename and not looks_like_pdf:
+            # Geen naam én geen PDF-signatuur -> waarschijnlijk gewoon
+            # body-content of iets irrelevants, niet bewaren.
+            continue
+        if disp not in ("attachment", "inline") and not looks_like_pdf:
+            continue
+        if not data:
+            continue
+
+        # Dedup op bytes: dezelfde PDF komt bij forwards soms zowel op het
+        # buitenste niveau als in de genest rfc822-payload voor.
+        digest = hashlib.sha256(data).digest()
+        if digest in seen:
+            continue
+        seen.add(digest)
+
+        safe_name = _decode_header(filename) if filename else f"attachment-{idx}.pdf"
+        if looks_like_pdf and not safe_name.lower().endswith(".pdf"):
+            safe_name = f"{safe_name}.pdf"
+        resolved_ct = content_type or ("application/pdf" if is_pdf_bytes else "application/octet-stream")
+        if is_pdf_bytes and resolved_ct != "application/pdf":
+            resolved_ct = "application/pdf"
+
         attachments.append({
-            "filename": _decode_header(filename),
-            "content_type": part.get_content_type(),
+            "filename": safe_name,
+            "content_type": resolved_ct,
             "data": data,
         })
     return attachments

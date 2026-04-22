@@ -127,6 +127,40 @@ def is_test_sender(from_address: str | None) -> bool:
     return any(s in low for s in TEST_SENDERS)
 
 
+def find_duplicate_created_order(sb, row: dict) -> dict | None:
+    """Zoek een eerder aangemaakte Exact-order voor dezelfde bestelling.
+
+    Patrick stuurt dezelfde PDF soms meerdere keren los door (nieuwe mail,
+    geen In-Reply-To), waardoor thread-matching ze niet samenvoegt. Zonder
+    deze check maakt de pipeline dan twee SalesOrders in Exact aan voor
+    dezelfde PO. We matchen op customer_reference + matched_customer.id,
+    en kijken naar incoming_orders met parse_status='created'.
+
+    Retourneert de duplicate-rij óf None wanneer er geen dubbel is.
+    """
+    parsed = row.get("parsed_data") or {}
+    customer_ref = (parsed.get("customer_reference") or "").strip()
+    matched = parsed.get("matched_customer") or {}
+    account_id = matched.get("id")
+    if not customer_ref or not account_id:
+        return None
+
+    res = (
+        sb.table("incoming_orders")
+        .select("id,exact_order_id,parsed_data,received_at")
+        .eq("parse_status", "created")
+        .neq("id", row.get("id"))
+        .execute()
+    )
+    for existing in res.data or []:
+        ep = existing.get("parsed_data") or {}
+        eref = (ep.get("customer_reference") or "").strip()
+        eacc = (ep.get("matched_customer") or {}).get("id")
+        if eref.lower() == customer_ref.lower() and eacc == account_id:
+            return existing
+    return None
+
+
 def process_pending(sb, exact_client=None, anthropic_client=None) -> dict:
     """Verwerk alle incoming_orders die nog geen eindstatus hebben."""
     from order_parser import parse_incoming_order
@@ -212,6 +246,27 @@ def process_pending(sb, exact_client=None, anthropic_client=None) -> dict:
             continue
 
         if exact_client is None:
+            stats["skipped"] += 1
+            continue
+
+        # Dedup vóór POST: zelfde PO + zelfde klant al eerder in Exact
+        # aangemaakt? Dan overslaan en als 'ignored' markeren i.p.v. een
+        # duplicate order in Exact aanmaken.
+        duplicate = find_duplicate_created_order(sb, row)
+        if duplicate is not None:
+            log.info(
+                "Duplicate PO voor row %s — bestaat al als incoming_orders %s (Exact %s); markeer als ignored",
+                row_id,
+                duplicate.get("id"),
+                duplicate.get("exact_order_id"),
+            )
+            sb.table("incoming_orders").update(
+                {
+                    "parse_status": "ignored",
+                    "exact_order_id": duplicate.get("exact_order_id"),
+                    "error": f"duplicate_po: al aangemaakt als {duplicate.get('exact_order_id')}",
+                }
+            ).eq("id", row_id).execute()
             stats["skipped"] += 1
             continue
 

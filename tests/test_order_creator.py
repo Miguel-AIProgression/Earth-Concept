@@ -90,6 +90,33 @@ def test_build_salesorder_payload_missende_item_id_raised():
         build_salesorder_payload(parsed, "acc", [bad])
 
 
+def test_build_salesorder_payload_description_is_po_niet_willekeurige_tekst():
+    """Description moet altijd het PO-nummer zijn.
+
+    Regressie: Claude retourneert soms een 'description'-veld buiten het
+    schema om, met een willekeurige zin uit de mail/PDF ('Incoterm:
+    Delivered Duty Paid...', 'Ordernummer X vermelden op afleverbon...').
+    Die kwam vroeger als Description in Exact terecht. We moeten die
+    negeren en altijd het customer_reference kiezen.
+    """
+    parsed = {
+        "customer_reference": "2604220003",
+        "description": "Incoterm: Delivered Duty Paid. Betaling binnen 30 dagen",
+    }
+    payload = build_salesorder_payload(parsed, "acc", [_matched_line()])
+    assert payload["Description"] == "2604220003"
+
+
+def test_build_salesorder_payload_description_fallback_als_geen_po():
+    """Zonder customer_reference mag de description-parameter alsnog dienen."""
+    parsed = {}
+    payload = build_salesorder_payload(parsed, "acc", [_matched_line()], description="Handmatig")
+    assert payload["Description"] == "Handmatig"
+
+    payload = build_salesorder_payload(parsed, "acc", [_matched_line()])
+    assert payload["Description"] == "Bestelling"
+
+
 # ----- compute_overall_confidence -----
 
 

@@ -148,6 +148,127 @@ def test_bijlage_geextraheerd():
     assert att["data"] == b"%PDF-1.4 fakepdf"
 
 
+def test_pdf_zonder_filename_wordt_alsnog_gepakt():
+    """Outlook-forwards sturen een PDF soms aan als application/pdf zonder
+    filename-parameter. Zonder fallback miste de pipeline de hele order."""
+    from email.message import EmailMessage
+
+    msg = EmailMessage()
+    msg["Subject"] = "RE:"
+    msg["From"] = "michael@bblco.ie"
+    msg["To"] = "orders@earthwater.nl"
+    msg["Message-ID"] = "<x@y>"
+    msg["Date"] = "Mon, 22 Apr 2026 11:26:00 +0000"
+    msg.set_content("Hi, zie bijlage.")
+    # Bewust zonder filename toevoegen:
+    msg.add_attachment(b"%PDF-1.4 echte-order", maintype="application", subtype="pdf")
+    # Strip de filename parameter alsnog (add_attachment zet 'm niet zonder, maar
+    # voor de echtheid: simuleer door het Content-Disposition te overschrijven).
+    for part in msg.iter_attachments():
+        if "Content-Disposition" in part:
+            del part["Content-Disposition"]
+
+    parsed = mail_intake._parse_raw(msg.as_bytes())
+    pdfs = [a for a in parsed["attachments"] if a["content_type"] == "application/pdf"]
+    assert len(pdfs) == 1
+    assert pdfs[0]["data"].startswith(b"%PDF-")
+
+
+def test_pdf_als_octet_stream_met_pdf_magic_wordt_gepakt():
+    """Sommige mailclients labelen PDFs als application/octet-stream."""
+    from email.message import EmailMessage
+
+    msg = EmailMessage()
+    msg["Subject"] = "Order"
+    msg["From"] = "klant@x.nl"
+    msg["To"] = "orders@earthwater.nl"
+    msg["Message-ID"] = "<oct@y>"
+    msg["Date"] = "Mon, 22 Apr 2026 11:26:00 +0000"
+    msg.set_content("Bestelling bijgevoegd.")
+    msg.add_attachment(
+        b"%PDF-1.7 binary",
+        maintype="application",
+        subtype="octet-stream",
+        filename="inkooporder",
+    )
+
+    parsed = mail_intake._parse_raw(msg.as_bytes())
+    pdfs = [a for a in parsed["attachments"] if a["data"].startswith(b"%PDF-")]
+    assert len(pdfs) == 1
+    assert pdfs[0]["content_type"] == "application/pdf"
+    assert pdfs[0]["filename"].lower().endswith(".pdf")
+
+
+def test_pdf_in_geneste_rfc822_wordt_gepakt():
+    """Bij Outlook-forwards zit de PDF vaak als bijlage ván het originele
+    bericht dat message/rfc822-gewrapped is. walk() van de buitenste
+    Message stapt daar niet automatisch in."""
+    from email.message import EmailMessage
+
+    # Origineel bericht mét PDF-bijlage
+    inner = EmailMessage()
+    inner["Subject"] = "Original PO"
+    inner["From"] = "klant@x.nl"
+    inner["To"] = "sales@earthwater.nl"
+    inner["Message-ID"] = "<inner@x>"
+    inner["Date"] = "Mon, 22 Apr 2026 09:00:00 +0000"
+    inner.set_content("Hierbij onze PO.")
+    inner.add_attachment(
+        b"%PDF-1.5 nested-order",
+        maintype="application",
+        subtype="pdf",
+        filename="PO-123.pdf",
+    )
+
+    # Forwarded wrapper
+    outer = EmailMessage()
+    outer["Subject"] = "Fwd: Original PO"
+    outer["From"] = "patrick@earthwater.nl"
+    outer["To"] = "orders@earthwater.nl"
+    outer["Message-ID"] = "<outer@y>"
+    outer["Date"] = "Mon, 22 Apr 2026 09:05:00 +0000"
+    outer.set_content("Doorsturen naar intake.")
+    # EmailMessage.add_attachment() voor message/rfc822 leidt content-type
+    # zelf af uit het meegegeven Message-object, geen maintype/subtype.
+    outer.add_attachment(inner)
+
+    parsed = mail_intake._parse_raw(outer.as_bytes())
+    pdfs = [a for a in parsed["attachments"] if a["content_type"] == "application/pdf"]
+    assert len(pdfs) == 1
+    assert pdfs[0]["data"].startswith(b"%PDF-")
+    assert "PO-123" in pdfs[0]["filename"]
+
+
+def test_signature_png_blijft_maar_pdf_wordt_ook_gepakt():
+    """image001.png-handtekening moet niet de PDF verdringen."""
+    from email.message import EmailMessage
+
+    msg = EmailMessage()
+    msg["Subject"] = "RE:"
+    msg["From"] = "michael@bblco.ie"
+    msg["To"] = "orders@earthwater.nl"
+    msg["Message-ID"] = "<sig@y>"
+    msg["Date"] = "Mon, 22 Apr 2026 11:26:00 +0000"
+    msg.set_content("Zie bijlage.")
+    msg.add_attachment(
+        b"\x89PNG\r\n\x1a\n" + b"x" * 100,
+        maintype="image",
+        subtype="png",
+        filename="image001.png",
+    )
+    msg.add_attachment(
+        b"%PDF-1.4 order",
+        maintype="application",
+        subtype="pdf",
+        filename="order.pdf",
+    )
+
+    parsed = mail_intake._parse_raw(msg.as_bytes())
+    types = {a["content_type"] for a in parsed["attachments"]}
+    assert "application/pdf" in types
+    assert "image/png" in types
+
+
 def test_geen_message_id_gebruikt_hash():
     raw = _build_raw_email(message_id=None)
     parsed = mail_intake._parse_raw(raw)

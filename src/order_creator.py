@@ -52,14 +52,18 @@ def build_salesorder_payload(
             line_payload["UnitPrice"] = unit_price
         lines_payload.append(line_payload)
 
-    # Description valt terug op de inkooporder/PO-nummer: dat is de herkenning
-    # die Patrick in Exact nodig heeft -- YourRef is niet altijd zichtbaar in
-    # overzichten, Description wel.
-    customer_ref = parsed.get("customer_reference") or ""
+    # Description = PO-nummer van de klant: dat is de herkenning die Patrick in
+    # Exact nodig heeft (YourRef is in overzichten niet altijd zichtbaar,
+    # Description wel). We vallen NOOIT terug op parsed.get("description") of
+    # line-notities -- Claude levert dat veld soms (buiten schema om) aan met
+    # willekeurige zinnen uit de mail/PDF ("Incoterm: ...", "Ordernummer X
+    # vermelden op afleverbon..."), en die kwamen zo vervolgens als slordige
+    # omschrijving in Exact terecht.
+    customer_ref = (parsed.get("customer_reference") or "").strip()
     payload: dict[str, Any] = {
         "OrderedBy": account_id,
         "YourRef": customer_ref,
-        "Description": description or parsed.get("description") or customer_ref,
+        "Description": customer_ref or (description or "").strip() or "Bestelling",
         "SalesOrderLines": lines_payload,
     }
 

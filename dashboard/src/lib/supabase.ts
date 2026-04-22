@@ -71,6 +71,7 @@ export type IncomingOrder = {
   error: string | null;
   auto_reply_sent_at: string | null;
   confirmation_sent_at: string | null;
+  thread_id: string | null;
   created_at: string;
 };
 

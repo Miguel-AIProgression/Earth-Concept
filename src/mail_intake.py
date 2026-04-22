@@ -79,23 +79,80 @@ def _extract_body(msg) -> tuple[str, str]:
     return text_body, html_body
 
 
+_PDF_MAGIC = b"%PDF-"
+
+
+def _iter_parts(msg):
+    """Yield every leaf part, inclusief binnen message/rfc822-wrappers.
+
+    email.Message.walk() daalt niet automatisch af in doorgestuurde/genest
+    berichten (type message/rfc822). Die komen vaak binnen als één part met
+    het originele bericht als payload, en de PDF-bijlage zit daar weer een
+    laag dieper in. Zonder deze recursie missen we de PDF van Outlook-
+    forwards volledig.
+    """
+    for part in msg.walk():
+        if part.get_content_type() == "message/rfc822":
+            payload = part.get_payload()
+            # rfc822-payload is een lijst met één Message-object.
+            inner = payload[0] if isinstance(payload, list) and payload else payload
+            if hasattr(inner, "walk"):
+                yield from _iter_parts(inner)
+            continue
+        if part.get_content_maintype() == "multipart":
+            continue
+        yield part
+
+
 def _extract_attachments(msg) -> list[dict]:
     attachments = []
     if not msg.is_multipart():
         return attachments
-    for part in msg.walk():
-        if part.get_content_maintype() == "multipart":
-            continue
+    seen: set[bytes] = set()
+    for idx, part in enumerate(_iter_parts(msg)):
         filename = part.get_filename()
-        if not filename:
-            continue
+        content_type = (part.get_content_type() or "").lower()
         disp = part.get_content_disposition()
-        if disp not in ("attachment", "inline"):
-            continue
+
+        # Pak alles met een expliciete filename (attachment of inline) én
+        # alles wat er als PDF uitziet -- ook zonder filename en/of zonder
+        # Content-Disposition. Outlook-forwards sturen de PDF soms aan als
+        # 'application/octet-stream' zonder filename, of als application/pdf
+        # inline zonder disposition -- beide werden voorheen geskipt.
         data = part.get_payload(decode=True) or b""
+        is_pdf_bytes = data[:5] == _PDF_MAGIC
+        looks_like_pdf = (
+            content_type == "application/pdf"
+            or (filename or "").lower().endswith(".pdf")
+            or is_pdf_bytes
+        )
+
+        if not filename and not looks_like_pdf:
+            # Geen naam én geen PDF-signatuur -> waarschijnlijk gewoon
+            # body-content of iets irrelevants, niet bewaren.
+            continue
+        if disp not in ("attachment", "inline") and not looks_like_pdf:
+            continue
+        if not data:
+            continue
+
+        # Dedup op bytes: dezelfde PDF komt bij forwards soms zowel op het
+        # buitenste niveau als in de genest rfc822-payload voor.
+        digest = hashlib.sha256(data).digest()
+        if digest in seen:
+            continue
+        seen.add(digest)
+
+        safe_name = _decode_header(filename) if filename else f"attachment-{idx}.pdf"
+        if looks_like_pdf and not safe_name.lower().endswith(".pdf"):
+            safe_name = f"{safe_name}.pdf"
+        resolved_ct = content_type or ("application/pdf" if is_pdf_bytes else "application/octet-stream")
+        if is_pdf_bytes and resolved_ct != "application/pdf":
+            resolved_ct = "application/pdf"
+
         attachments.append({
-            "filename": _decode_header(filename),
-            "content_type": part.get_content_type(),
+            "filename": safe_name,
+            "content_type": resolved_ct,
             "data": data,
         })
     return attachments
@@ -118,6 +175,21 @@ def _parse_raw(raw: bytes) -> dict:
 
     text_body, html_body = _extract_body(msg)
 
+    # RFC 5322-threading: verzamel de Message-IDs waar dit bericht op
+    # reageert. In-Reply-To bevat de directe ouder, References de hele
+    # thread-keten. We tillen ze eruit in ontvangst-volgorde (oudste eerst
+    # in References) zodat de root-lookup later bij voorkeur bij de echte
+    # thread-root uitkomt.
+    refs: list[str] = []
+    refs_header = (msg.get("References") or "").strip()
+    if refs_header:
+        refs.extend(re.findall(r"<[^<>\s]+>", refs_header))
+    in_reply_to = (msg.get("In-Reply-To") or "").strip()
+    if in_reply_to:
+        m = re.search(r"<[^<>\s]+>", in_reply_to)
+        if m and m.group(0) not in refs:
+            refs.append(m.group(0))
+
     return {
         "message_id": message_id,
         "received_at": received_at,
@@ -126,6 +198,7 @@ def _parse_raw(raw: bytes) -> dict:
         "body_text": text_body,
         "body_html": html_body,
         "attachments": _extract_attachments(msg),
+        "references": refs,
     }
 
 
@@ -199,7 +272,34 @@ def upload_attachments(sb, message_id: str, attachments: list[dict]) -> list[dic
     return uploaded
 
 
+def resolve_thread_id(sb, message_id: str, references: list[str]) -> str:
+    """Bepaal de thread_id voor een nieuw binnengekomen mail.
+
+    Strategie: van de oudste naar de nieuwste reference checken of die al
+    in onze incoming_orders zit. De eerste hit → die rij's thread_id is
+    ook de onze (zelfde thread). Als geen van de references bekend is,
+    is dit bericht de thread-root en wordt ``message_id`` gebruikt als
+    thread_id.
+    """
+    for ref in references or []:
+        try:
+            res = (
+                sb.table("incoming_orders")
+                .select("thread_id,message_id")
+                .eq("message_id", ref)
+                .limit(1)
+                .execute()
+            )
+            if res.data:
+                parent = res.data[0]
+                return parent.get("thread_id") or parent.get("message_id") or message_id
+        except Exception as e:
+            log.warning("Thread-lookup mislukt voor ref %s: %s", ref, e)
+    return message_id
+
+
 def save_message(sb, msg: dict) -> dict:
+    thread_id = resolve_thread_id(sb, msg["message_id"], msg.get("references", []))
     row = {
         "message_id": msg["message_id"],
         "received_at": msg["received_at"] or None,
@@ -209,6 +309,7 @@ def save_message(sb, msg: dict) -> dict:
         "body_html": msg.get("body_html"),
         "attachments": msg.get("attachments_meta", []),
         "parse_status": "pending",
+        "thread_id": thread_id,
     }
     res = sb.table("incoming_orders").upsert(
         row, on_conflict="message_id", ignore_duplicates=True

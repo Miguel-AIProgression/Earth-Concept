@@ -19,6 +19,7 @@ export default function MailDetailPage() {
   const { user, session, loading: authLoading } = useAuth();
   const { id } = useParams<{ id: string }>();
   const [row, setRow] = useState<IncomingOrder | null>(null);
+  const [threadMails, setThreadMails] = useState<IncomingOrder[]>([]);
   const [sentEmails, setSentEmails] = useState<SentEmail[]>([]);
   const [loading, setLoading] = useState(true);
   const [attachmentUrls, setAttachmentUrls] = useState<Record<string, string>>({});
@@ -58,6 +59,46 @@ export default function MailDetailPage() {
     })();
   }, [session, id, row?.auto_reply_sent_at, row?.confirmation_sent_at]);
 
+  const customerRef = row?.parsed_data?.customer_reference?.trim() || null;
+
+  useEffect(() => {
+    if (!session || !row) {
+      setThreadMails([]);
+      return;
+    }
+    (async () => {
+      // Verzamel alle mails die bij dezelfde bestelling horen: primair op
+      // PO-nummer (customer_reference) als dat beschikbaar is, daarnaast ook
+      // de RFC-thread. Patrick stuurt dezelfde order soms als losse nieuwe
+      // mail door (geen In-Reply-To), dus thread_id alléén dekt dat niet.
+      const merged = new Map<string, IncomingOrder>();
+      if (row.thread_id) {
+        const { data } = await supabase
+          .from("incoming_orders")
+          .select(
+            "id,subject,from_address,received_at,created_at,parse_status,thread_id,parsed_data"
+          )
+          .eq("thread_id", row.thread_id);
+        for (const r of (data as IncomingOrder[]) ?? []) merged.set(r.id, r);
+      }
+      if (customerRef) {
+        const { data } = await supabase
+          .from("incoming_orders")
+          .select(
+            "id,subject,from_address,received_at,created_at,parse_status,thread_id,parsed_data"
+          )
+          .eq("parsed_data->>customer_reference", customerRef);
+        for (const r of (data as IncomingOrder[]) ?? []) merged.set(r.id, r);
+      }
+      const list = Array.from(merged.values()).sort((a, b) => {
+        const ta = new Date(a.received_at ?? a.created_at).getTime();
+        const tb = new Date(b.received_at ?? b.created_at).getTime();
+        return ta - tb;
+      });
+      setThreadMails(list);
+    })();
+  }, [session, row, customerRef]);
+
   useEffect(() => {
     if (!row?.attachments?.length) return;
     (async () => {
@@ -93,6 +134,39 @@ export default function MailDetailPage() {
         </Link>
         <IntakeStatusBadge status={row.parse_status} />
       </div>
+
+      {threadMails.length > 1 && (
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <p className="text-xs uppercase text-gray-500 mb-2">
+            {threadMails.length} mails in deze bestelling
+            {customerRef && (
+              <span className="ml-2 font-mono normal-case text-gray-400">
+                PO {customerRef}
+              </span>
+            )}
+          </p>
+          <ul className="divide-y divide-gray-100">
+            {threadMails.map((t) => (
+              <li key={t.id}>
+                <Link
+                  href={`/mail/${t.id}`}
+                  className={
+                    "flex items-center justify-between py-2 text-sm hover:bg-gray-50 -mx-2 px-2 rounded " +
+                    (t.id === row.id ? "font-semibold text-gray-900" : "text-gray-600")
+                  }
+                >
+                  <span className="flex-1 truncate">
+                    {t.subject || "(geen onderwerp)"}
+                  </span>
+                  <span className="text-xs text-gray-500 whitespace-nowrap ml-4">
+                    {formatDate(t.received_at ?? t.created_at)}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
         <div>

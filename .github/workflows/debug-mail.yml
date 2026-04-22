@@ -1,0 +1,35 @@
+name: Debug mail MIME
+
+# Dumpt de MIME-structuur en body van één specifieke incoming_orders-rij
+# in de Actions-logs, zodat we kunnen zien waarom een PDF niet wordt
+# opgepikt (bv. cloud-link in body i.p.v. MIME-bijlage).
+
+on:
+  workflow_dispatch:
+    inputs:
+      row_id:
+        description: "incoming_orders.id (uuid uit /mail/<uuid>)"
+        required: true
+        type: string
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - run: pip install -r requirements.txt
+      - name: Dump MIME-structuur voor row ${{ inputs.row_id }}
+        working-directory: src
+        env:
+          MAIL_USER: ${{ secrets.MAIL_USER }}
+          MAIL_PASS: ${{ secrets.MAIL_PASS }}
+          MAIL_HOST: imap.gmail.com
+          MAIL_PORT: "993"
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python debug_mail.py "${{ inputs.row_id }}"

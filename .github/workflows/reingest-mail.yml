@@ -1,0 +1,41 @@
+name: Reingest one mail
+
+# Handmatig triggerbaar via de GitHub Actions UI. Haalt één specifieke
+# incoming_orders-rij opnieuw uit IMAP, overschrijft body + attachments
+# in Supabase en zet parse_status terug op 'pending'. Gebruik als de
+# originele upload incompleet was (bv. PDF-extractor die inline-bijlages
+# oversloeg); de eerstvolgende pipeline-run pakt de rij dan weer op.
+
+on:
+  workflow_dispatch:
+    inputs:
+      row_id:
+        description: "incoming_orders.id (uuid uit het dashboard, bv. /mail/<uuid>)"
+        required: true
+        type: string
+
+concurrency:
+  group: mail-pipeline
+  cancel-in-progress: false
+
+jobs:
+  reingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - run: pip install -r requirements.txt
+      - name: Reingest row ${{ inputs.row_id }}
+        working-directory: src
+        env:
+          MAIL_USER: ${{ secrets.MAIL_USER }}
+          MAIL_PASS: ${{ secrets.MAIL_PASS }}
+          MAIL_HOST: imap.gmail.com
+          MAIL_PORT: "993"
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python reingest_mail.py "${{ inputs.row_id }}"
